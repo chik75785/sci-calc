@@ -999,7 +999,7 @@
 		for (const eq of plan.equations) {
 			for (const side of [eq.left, eq.right]) {
 				const parsed = compile(side);
-				if (parsed.vars) for (const name of parsed.vars) if (name !== "x" && name !== "y") state.params[name] = 1;
+				if (parsed.vars) for (const name of parsed.vars) if (name !== "x" && name !== "y") state.params[name] = Number.isFinite((plan.params || {})[name]) ? plan.params[name] : 1;
 			}
 		}
 		paramKey = "\u0000";
@@ -1058,6 +1058,8 @@
 			box.append(list);
 			const verify = verifyText();
 			if (verify) add("p", "앱이 직접 계산한 결과 (첫 번째 식 기준): " + verify, "verify");
+			const names = Object.keys(state.params);
+			if (names.length) add("p", "그래프 탭 아래 '변수 조절'에서 " + names.map((n) => n + "(시작값 " + fmt(state.params[n]) + ")").join(", ") + "를 움직여 보세요.", "note");
 		} else {
 			add("p", "이 문제는 그래프로 그릴 수 있는 식이 없어서 풀이만 보여드려요.", "note");
 		}

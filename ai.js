@@ -19,6 +19,7 @@ const Ai = (() => {
 			'  "equations": [ { "left": "식", "right": "식", "label": "무엇을 나타내는지" } ],',
 			'  "answer": "최종 답 (한 줄)",',
 			'  "steps": ["풀이 단계 1", "풀이 단계 2"],',
+			'  "params": { "k": 2, "t": 1 },',
 			'  "notes": "가정이나 주의할 점. 없으면 빈 문자열"',
 			"}",
 			"",
@@ -29,7 +30,9 @@ const Ai = (() => {
 			'- f(x)=g(x)를 풀거나 두 함수의 교점을 구할 때: left="f(x)", right="g(x)" (한 개의 방정식으로).',
 			'- 원, 타원, 쌍곡선처럼 y가 들어가는 도형: left="x^2+y^2", right="25" 처럼 y를 포함해서 쓰고, right는 상수로 둡니다.',
 			"- 곡선이 여러 개면 equations에 여러 개 넣되 최대 " + MAX_EQUATIONS + "개까지만 씁니다.",
-			"- 매개변수가 필요한 문제는 a, b, c 같은 한 글자 변수를 쓰면 앱이 슬라이더를 만들어 줍니다 (x, y, e 제외).",
+			"- 매개변수(문제에 k, t, a 같은 문자로 주어진 값)가 있으면 **값을 정해서 쓰지 말고 그 문자를 식에 그대로 쓰세요.** 앱이 그 문자마다 슬라이더(-20~20)를 만들어서, 사용자가 값을 움직이며 그래프와 해가 어떻게 변하는지 관찰합니다. 예: |x^3-3x^2+k| = t 문제라면 left=\"abs(x^3-3x^2+k)\", right=\"t\" 로 쓰고 k=2 같은 특정 값으로 고정한 식을 따로 그리지 마세요.",
+			'- 매개변수는 소문자 한 글자만 쓸 수 있습니다 (x, y, e 제외). 문제의 문자가 f, g 같은 함수 이름이거나 x, y, e와 겹치면 다른 문자로 바꾸고 notes에 어떻게 바꿨는지 적으세요.',
+			'- "params"에는 equations에서 쓴 매개변수의 시작값을 넣습니다 (예: {"k": 2, "t": 1}). 문제가 값을 주었으면 그 값, 아니면 변화를 관찰하기 좋은 값(-20~20)을 고르세요. 매개변수가 없으면 빈 객체 {} 로 둡니다.',
 			"- 삼각형·사각형 같은 도형, 점·선분, 통계, 증명처럼 그래프로 그릴 수 없는 문제는 equations를 빈 배열로 두고 steps와 answer에 풀이만 쓰세요.",
 			"- 삼각함수는 앱의 현재 각도 단위에 맞추세요. 현재 단위: " + (unit === "deg" ? "도(DEG)" : "라디안(RAD, pi 사용)") + ".",
 			"",
@@ -66,6 +69,19 @@ const Ai = (() => {
 
 	const str = (value) => (typeof value === "string" ? value.trim() : typeof value === "number" && Number.isFinite(value) ? String(value) : "");
 
+	// 매개변수 시작값: 소문자 한 글자(x, y, e 제외)에 유한한 숫자만 받고, 슬라이더 범위 -20~20 으로 맞춥니다.
+	function sanitizeParams(raw) {
+		const params = {};
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) return params;
+		for (const [name, value] of Object.entries(raw)) {
+			if (!/^[a-z]$/.test(name) || name === "x" || name === "y" || name === "e") continue;
+			const number = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : NaN;
+			if (!Number.isFinite(number)) continue;
+			params[name] = Math.round(Math.max(-20, Math.min(20, number)) * 100) / 100;
+		}
+		return params;
+	}
+
 	// 응답을 앱에서 안전하게 쓸 수 있는 형태로 정리합니다. parse는 Calc.parse.
 	// 앱이 해석하지 못하는 식은 버리고 dropped 에 이유와 함께 남깁니다.
 	function sanitizePlan(raw, parse) {
@@ -88,6 +104,7 @@ const Ai = (() => {
 		return {
 			title: str(raw.title).slice(0, 120),
 			answer: str(raw.answer).slice(0, 400),
+			params: sanitizeParams(raw.params),
 			steps: (Array.isArray(raw.steps) ? raw.steps : []).map(str).filter(Boolean).slice(0, 12),
 			notes: str(raw.notes).slice(0, 400),
 			equations,
@@ -135,7 +152,7 @@ const Ai = (() => {
 		return orderModels(models)[0] || null;
 	}
 
-	const api = { MAX_EQUATIONS, MAX_IMAGES, MAX_IMAGE_SIDE, buildUserParts, DEFAULT_MODEL, buildSystemPrompt, extractJson, sanitizePlan, describeHttpError, listUsableModels, orderModels, pickModel, isOverloadStatus };
+	const api = { MAX_EQUATIONS, MAX_IMAGES, MAX_IMAGE_SIDE, buildUserParts, DEFAULT_MODEL, buildSystemPrompt, extractJson, sanitizePlan, describeHttpError, sanitizeParams, listUsableModels, orderModels, pickModel, isOverloadStatus };
 	if (typeof module !== "undefined" && module.exports) module.exports = api;
 	return api;
 })();

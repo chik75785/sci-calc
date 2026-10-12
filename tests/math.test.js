@@ -101,6 +101,43 @@ test("π 표기: sin(x)=0.5 의 해가 π/6, 5π/6 …", () => {
 	eq(roots.map((r) => engine.formatPi(r)).join(","), "π/6,5π/6,13π/6");
 });
 
+const ai = typeof require === "function" ? require("../ai.js") : Ai;
+test("AI 응답: 코드블록과 군더더기가 있어도 JSON을 꺼냄", () => {
+	eq(ai.extractJson('{"a":1}').a, 1);
+	eq(ai.extractJson('```json\n{"a":2}\n```').a, 2);
+	eq(ai.extractJson('결과입니다: {"a":3} 끝').a, 3);
+	throws(() => ai.extractJson("JSON이 아님"));
+});
+test("AI 응답: 올바른 식은 통과, 모르는 식은 제외", () => {
+	const plan = ai.sanitizePlan({
+		title: "교점", answer: "x=1, 2", steps: ["a", "b", ""], notes: "",
+		equations: [{ left: "x^2-4x+3", right: "x-1", label: "포물선과 직선" }, { left: "floor(x", right: "0" }, { left: "", right: "1" }],
+	}, engine.parse);
+	eq(plan.equations.length, 1); eq(plan.dropped.length, 2); eq(plan.steps.length, 2); eq(plan.equations[0].label, "포물선과 직선");
+});
+test("AI 응답: 오른쪽이 숫자(0)여도 받아들임", () => {
+	const plan = ai.sanitizePlan({ equations: [{ left: "x^2-4", right: 0 }] }, engine.parse);
+	eq(plan.equations.length, 1); eq(plan.equations[0].right, "0");
+});
+test("AI 응답: 식은 최대 4개, 배열이 아니거나 비어도 안전", () => {
+	const many = Array.from({ length: 9 }, (_, i) => ({ left: "x+" + i, right: "0" }));
+	eq(ai.sanitizePlan({ equations: many }, engine.parse).equations.length, 4);
+	eq(ai.sanitizePlan({ equations: "없음", steps: "없음" }, engine.parse).equations.length, 0);
+	throws(() => ai.sanitizePlan(null, engine.parse)); throws(() => ai.sanitizePlan([], engine.parse));
+});
+test("AI 오류 문구", () => {
+	const bad = { error: { message: "API key not valid.", details: [{ reason: "API_KEY_INVALID" }] } };
+	eq(ai.describeHttpError(400, bad).includes("API 키"), true);
+	eq(ai.describeHttpError(429, null).includes("한도"), true);
+	eq(ai.describeHttpError(404, null).includes("모델"), true);
+	eq(ai.describeHttpError(503, null).includes("서버"), true);
+});
+test("AI 프롬프트: 각도 단위와 최대 식 개수 반영", () => {
+	eq(ai.buildSystemPrompt("deg").includes("도(DEG)"), true);
+	eq(ai.buildSystemPrompt("rad").includes("라디안"), true);
+	eq(ai.buildSystemPrompt("rad").includes("최대 4개"), true);
+});
+
 const failed = results.filter((r) => !r[0]);
 const summary = results.map((r) => (r[0] ? "PASS " : "FAIL ") + r[1]).join("\n") + "\n" + (results.length - failed.length) + "/" + results.length + " 통과";
 if (typeof document !== "undefined") {

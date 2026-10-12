@@ -77,7 +77,7 @@ input { font: inherit; color: var(--text); }
 
 .app { display: block; max-width: 1180px; margin: 0 auto; padding: 12px max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left)); }
 .panel { display: none; }
-body[data-tab="calc"] #panelCalc, body[data-tab="graph"] #panelGraph { display: block; }
+body[data-tab="calc"] #panelCalc, body[data-tab="graph"] #panelGraph, body[data-tab="ai"] #panelAI { display: block; }
 
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 12px; }
 .card h2 { margin-bottom: 8px; }
@@ -141,6 +141,21 @@ body[data-tab="calc"] #panelCalc, body[data-tab="graph"] #panelGraph { display: 
 .param input[type=number] { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 6px 8px; }
 .param input[type=range] { width: 100%; }
 
+textarea, #aiKey, .field input {
+	width: 100%; border: 1px solid var(--line); background: var(--bg); color: var(--text);
+	border-radius: 10px; padding: 9px 10px; font: inherit; resize: vertical;
+}
+.field { display: grid; gap: 4px; margin-top: 8px; font-size: .9rem; color: var(--muted); }
+details.card summary { cursor: pointer; font-weight: 600; }
+details.card[open] summary { margin-bottom: 8px; }
+.ai-result h3 { margin: 0 0 6px; font-size: 1.05rem; }
+.ai-result .answer { background: var(--op-bg); color: var(--op-ink); border-radius: 10px; padding: 8px 12px; font-weight: 700; margin: 8px 0; word-break: break-word; }
+.ai-result ol, .ai-result ul { margin: 6px 0; padding-left: 1.3em; }
+.ai-result li { margin: 3px 0; word-break: break-word; }
+.ai-result .verify { border-left: 3px solid var(--accent); padding: 2px 10px; margin: 8px 0; }
+.ai-result .note { color: var(--muted); font-size: .9rem; }
+.ai-result code { background: var(--fn-bg); border-radius: 6px; padding: 1px 6px; }
+
 .tabs {
 	position: fixed; left: 0; right: 0; bottom: 0; display: flex;
 	background: var(--surface); border-top: 1px solid var(--line);
@@ -152,6 +167,8 @@ body[data-tab="calc"] #panelCalc, body[data-tab="graph"] #panelGraph { display: 
 @media (min-width: 900px) {
 	.app { display: grid; grid-template-columns: minmax(340px, 430px) 1fr; gap: 16px; align-items: start; }
 	.panel, body[data-tab] .panel { display: block !important; }
+	#panelGraph { grid-column: 2; grid-row: 1 / span 2; }
+	#panelAI { grid-column: 1; }
 	.tabs { display: none; }
 	body { padding-bottom: 24px; }
 }

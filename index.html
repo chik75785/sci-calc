@@ -59,14 +59,42 @@
 			<div id="params" class="params"><p class="hint">식에 조절 가능한 변수가 없습니다. 예: a*x^2 + b</p></div>
 		</div>
 	</section>
+
+	<section id="panelAI" class="panel" aria-label="AI로 문제 풀기">
+		<div class="card">
+			<h2>AI로 문제 풀기</h2>
+			<p class="hint">문제를 입력하면 Gemini가 그릴 식을 세우고, 앱이 그래프로 그려서 해를 직접 계산해 줘요.</p>
+			<textarea id="aiProblem" rows="4" maxlength="1500" placeholder="예: 포물선 y = x² - 4x + 3 과 직선 y = x - 1 의 교점을 구하세요" aria-label="수학 문제"></textarea>
+			<div class="toolbar">
+				<button id="aiSolve" class="btn primary">풀어보기</button>
+				<button id="aiShowGraph" class="btn" hidden>그래프 보기</button>
+			</div>
+			<p id="aiStatus" class="msg" role="status"></p>
+			<div id="aiResult" class="ai-result" hidden></div>
+		</div>
+
+		<details id="aiSettings" class="card">
+			<summary>AI 설정 (API 키)</summary>
+			<p class="hint">Google AI Studio에서 발급한 Gemini API 키를 입력하세요. 키는 <strong>이 기기의 브라우저에만</strong> 저장되고, 코드나 GitHub에는 올라가지 않아요.</p>
+			<input id="aiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="API 키 붙여넣기" aria-label="Gemini API 키">
+			<label class="field">모델 <input id="aiModel" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="모델 이름"></label>
+			<div class="toolbar">
+				<button id="aiSaveKey" class="btn primary">저장</button>
+				<button id="aiClearKey" class="btn">키 삭제</button>
+			</div>
+			<p id="aiKeyState" class="hint"></p>
+		</details>
+	</section>
 </main>
 
 <nav class="tabs" aria-label="화면 전환">
 	<button data-tab-btn="calc" aria-pressed="true">계산기</button>
 	<button data-tab-btn="graph" aria-pressed="false">그래프</button>
+	<button data-tab-btn="ai" aria-pressed="false">AI 풀이</button>
 </nav>
 
 <script src="math.js"></script>
+<script src="ai.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

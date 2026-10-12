@@ -185,6 +185,11 @@ test("AI 프롬프트: 매개변수를 고정하지 말고 문자 그대로 쓰�
 	const prompt = ai.buildSystemPrompt("rad");
 	eq(prompt.includes("그 문자를 식에 그대로") && prompt.includes("슬라이더") && prompt.includes('"params"'), true);
 });
+test("AI 프롬프트: 곡선끼리 만나는 문제는 서로 비교하는 식으로 쓰라고 안내", () => {
+	const prompt = ai.buildSystemPrompt("rad");
+	eq(prompt.includes("서로 비교하는 식") && prompt.includes("f=g, f=2x, g=2x"), true);
+	eq(prompt.includes("서로 만나는 모습이 보이지 않으니"), true);
+});
 test("AI 기본 모델은 gemini-3.8-flash", () => { eq(ai.DEFAULT_MODEL, "gemini-3.8-flash"); });
 test("AI 프롬프트: 각도 단위와 최대 식 개수 반영", () => {
 	eq(ai.buildSystemPrompt("deg").includes("도(DEG)"), true);

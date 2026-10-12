@@ -39,26 +39,17 @@
 			<div id="quickKeys" class="quick" aria-label="입력 도우미"></div>
 			<div class="toolbar">
 				<button id="addEq" class="btn">+ 식 추가</button>
-				<button id="solveBtn" class="btn primary">실수 해 찾기</button>
 			</div>
 			<p id="eqResult" class="result">예: sin(x) = 0.5 또는 x^3 - 2*x - 5 = 0</p>
 		</div>
 
 		<div class="card">
-			<div class="range-row">
-				<label>x 구간
-					<input id="xmin" inputmode="decimal" autocomplete="off" aria-label="x 최솟값">
-					<span>~</span>
-					<input id="xmax" inputmode="decimal" autocomplete="off" aria-label="x 최댓값">
-				</label>
-			</div>
 			<div class="toolbar">
-				<button id="resetRange" class="btn">범위 초기화</button>
-				<button id="autoRange" class="btn">범위 없음(자동)</button>
-				<button id="yAuto" class="btn" aria-pressed="true">Y축 자동: 켜짐</button>
+				<button id="fitBtn" class="btn">자동 맞춤</button>
+				<span class="axis-key"><i class="ax x"></i>x축 (y=0) <i class="ax y"></i>y축 (x=0)</span>
 			</div>
 			<canvas id="graph" aria-label="그래프"></canvas>
-			<p class="hint">드래그: 이동 · 두 손가락 / 휠: 확대·축소 · 탭: 값 보기</p>
+			<p class="hint">범위는 자동으로 맞춰져요. 드래그: 이동 · 두 손가락 / 휠: 확대·축소 · 탭: 값 보기</p>
 			<p id="probe" class="probe" aria-live="polite"></p>
 			<div id="legend" class="legend"></div>
 		</div>

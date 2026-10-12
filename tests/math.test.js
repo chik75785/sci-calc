@@ -49,6 +49,42 @@ test("해 찾기: 점근선 1/x=0 은 해가 없음", () => { eq(engine.findRoot
 test("해 찾기: 변수 포함 a*x=6", () => { near(engine.findRoots(solver("a*x", "6", { a: 3 }), -10, 10)[0], 2, 1e-8); });
 test("해 찾기: 자동 범위는 큰 해도 찾음", () => { eq(engine.findRootsAuto(solver("x", "500")).length, 1); });
 
+const polyOf = (src, env) => engine.parse(src).poly(Object.assign({ k: 1 }, env));
+const polyRoots = (left, right, env) => engine.polyRealRoots(engine.polySub(polyOf(left, env), polyOf(right, env)));
+test("다항식 판별: 계수로 변환", () => {
+	eq(JSON.stringify(polyOf("x^2-4")), "[-4,0,1]");
+	eq(JSON.stringify(polyOf("(x+1)^3")), "[1,3,3,1]");
+	eq(JSON.stringify(polyOf("x/2+1")), "[1,0.5]");
+	eq(JSON.stringify(polyOf("a*x^2+b", { a: 2, b: 3 })), "[3,0,2]");
+	eq(JSON.stringify(polyOf("2x^2-x")), "[0,-1,2]");
+});
+test("다항식 판별: 다항식이 아닌 식은 null", () => {
+	eq(polyOf("sin(x)"), null); eq(polyOf("1/x"), null); eq(polyOf("x^0.5"), null); eq(polyOf("2^x"), null); eq(polyOf("abs(x)"), null);
+});
+test("다항식 판별: 상수 함수 호출은 허용", () => { eq(JSON.stringify(polyOf("sqrt(4)*x")), "[0,2]"); });
+test("다항식 해: 삼차 x^3-2x-5 (구간 없이 하나)", () => {
+	const roots = polyRoots("x^3-2*x", "5");
+	eq(roots.length, 1); near(roots[0], 2.0945514815423265, 1e-9);
+});
+test("다항식 해: (x-1)(x-2)(x-3) 전개형", () => {
+	const roots = polyRoots("x^3-6x^2+11x", "6");
+	eq(roots.length, 3); near(roots[0], 1, 1e-9); near(roots[1], 2, 1e-9); near(roots[2], 3, 1e-9);
+});
+test("다항식 해: 사차 x^4-5x^2+4 는 4개", () => {
+	const roots = polyRoots("x^4-5x^2+4", "0");
+	eq(roots.length, 4); near(roots[0], -2, 1e-9); near(roots[1], -1, 1e-9); near(roots[2], 1, 1e-9); near(roots[3], 2, 1e-9);
+});
+test("다항식 해: 중근 (x-1)^2 와 삼중근 (x-2)^3", () => {
+	const double = polyRoots("(x-1)^2", "0"); eq(double.length, 1); near(double[0], 1, 1e-6);
+	const triple = polyRoots("(x-2)^3", "0"); eq(triple.length, 1); near(triple[0], 2, 1e-3);
+});
+test("다항식 해: 실수 해가 없는 x^2+1", () => { eq(polyRoots("x^2+1", "0").length, 0); });
+test("다항식 해: 아주 큰 해도 구간 없이 찾음", () => { near(polyRoots("x", "123456")[0], 123456, 1e-6); near(polyRoots("x^2", "10000000000")[1], 100000, 1e-3); });
+test("다항식 해: 변수 포함 a*x^2 = 8", () => {
+	const roots = polyRoots("a*x^2", "8", { a: 2 });
+	eq(roots.length, 2); near(roots[0], -2, 1e-9); near(roots[1], 2, 1e-9);
+});
+
 const failed = results.filter((r) => !r[0]);
 const summary = results.map((r) => (r[0] ? "PASS " : "FAIL ") + r[1]).join("\n") + "\n" + (results.length - failed.length) + "/" + results.length + " 통과";
 if (typeof document !== "undefined") {

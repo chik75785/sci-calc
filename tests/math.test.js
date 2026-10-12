@@ -18,13 +18,18 @@ function throws(fn) {
 	try { fn(); } catch (error) { thrown = true; }
 	if (!thrown) throw new Error("예외가 발생해야 합니다");
 }
-const ev = (s, env) => engine.evaluate(s, Object.assign({ k: 1 }, env));
+const ev = (s, env) => engine.evaluate(s, Object.assign({ angle: 1 }, env));
 
 test("사칙연산과 우선순위", () => { eq(ev("2+3*4"), 14); eq(ev("(2+3)*4"), 20); eq(ev("10/4"), 2.5); });
 test("거듭제곱은 오른쪽 결합, 단항 마이너스는 더 낮음", () => { eq(ev("2^3^2"), 512); eq(ev("-2^2"), -4); eq(ev("2^-1"), 0.5); });
 test("암묵적 곱셈", () => { eq(ev("2(3+4)"), 14); eq(ev("3x", { x: 2 }), 6); near(ev("2pi"), 2 * Math.PI); eq(ev("2x^2", { x: 3 }), 18); eq(ev("xsin(x)", { x: 0 }), 0); });
 test("함수", () => { eq(ev("sqrt(16)"), 4); near(ev("log(1000)"), 3); near(ev("ln(e)"), 1); eq(ev("abs(-5)"), 5); near(ev("sin(pi/2)"), 1); });
-test("각도 단위(DEG)", () => { near(ev("sin(90)", { k: Math.PI / 180 }), 1); near(ev("acos(0)", { k: Math.PI / 180 }), 90); });
+test("각도 단위(DEG)", () => { near(ev("sin(90)", { angle: Math.PI / 180 }), 1); near(ev("acos(0)", { angle: Math.PI / 180 }), 90); });
+test("변수 k 는 각도 단위와 충돌하지 않음 (sin(kx))", () => {
+	near(ev("sin(kx)", { k: 2, x: Math.PI / 4 }), 1);
+	near(ev("sin(kx)", { k: 2, x: 45, angle: Math.PI / 180 }), 1);
+	eq(ev("sin(kx)", { k: 0, x: 3 }), 0);
+});
 test("한글 키패드 기호", () => { eq(ev("6×7"), 42); eq(ev("8÷2"), 4); eq(ev("5−3"), 2); eq(ev("√(9)"), 3); });
 test("잘못된 식은 예외", () => { throws(() => ev("2+")); throws(() => ev("2 3")); throws(() => ev("(1+2")); throws(() => ev("")); throws(() => ev("2$3")); });
 test("정의되지 않은 변수는 예외", () => { throws(() => ev("a+1")); });
@@ -33,7 +38,7 @@ test("숫자 표시 형식", () => { eq(engine.formatNumber(0.1 + 0.2), "0.3"); 
 
 function solver(left, right, extra) {
 	const l = engine.parse(left), r = engine.parse(right);
-	const env = Object.assign({ x: 0, k: 1 }, extra);
+	const env = Object.assign({ x: 0, angle: 1 }, extra);
 	return (x) => { env.x = x; return l.fn(env) - r.fn(env); };
 }
 test("해 찾기: 이차방정식", () => {
@@ -49,7 +54,7 @@ test("해 찾기: 점근선 1/x=0 은 해가 없음", () => { eq(engine.findRoot
 test("해 찾기: 변수 포함 a*x=6", () => { near(engine.findRoots(solver("a*x", "6", { a: 3 }), -10, 10)[0], 2, 1e-8); });
 test("해 찾기: 자동 범위는 큰 해도 찾음", () => { eq(engine.findRootsAuto(solver("x", "500")).length, 1); });
 
-const polyOf = (src, env) => engine.parse(src).poly(Object.assign({ k: 1 }, env));
+const polyOf = (src, env) => engine.parse(src).poly(Object.assign({ angle: 1 }, env));
 const polyRoots = (left, right, env) => engine.polyRealRoots(engine.polySub(polyOf(left, env), polyOf(right, env)));
 test("다항식 판별: 계수로 변환", () => {
 	eq(JSON.stringify(polyOf("x^2-4")), "[-4,0,1]");

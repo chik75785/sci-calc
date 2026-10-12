@@ -180,8 +180,8 @@ const Calc = (() => {
 				expectOp(")");
 				const f = FUNCS[t.v];
 				return {
-					f: (env) => f(arg.f(env), env.k === undefined ? 1 : env.k),
-					p: (env) => { const x = arg.p(env); return x && x.length === 1 ? [f(x[0], env.k === undefined ? 1 : env.k)] : null; },
+					f: (env) => f(arg.f(env), env.angle === undefined ? 1 : env.angle),
+					p: (env) => { const x = arg.p(env); return x && x.length === 1 ? [f(x[0], env.angle === undefined ? 1 : env.angle)] : null; },
 				};
 			}
 			if (t.t === "op" && t.v === "(") {

@@ -65,6 +65,13 @@
 			<h2>AI로 문제 풀기</h2>
 			<p class="hint">문제를 입력하면 Gemini가 그릴 식을 세우고, 앱이 그래프로 그려서 해를 직접 계산해 줘요.</p>
 			<textarea id="aiProblem" rows="4" maxlength="1500" placeholder="예: 포물선 y = x² - 4x + 3 과 직선 y = x - 1 의 교점을 구하세요" aria-label="수학 문제"></textarea>
+			<div class="attach-row">
+				<button id="aiAttachBtn" type="button" class="btn">📷 사진 첨부</button>
+				<input id="aiImage" type="file" accept="image/*" multiple hidden>
+				<span id="aiAttachHint" class="hint">최대 3장</span>
+			</div>
+			<div id="aiThumbs" class="thumbs"></div>
+			<p class="hint">사진은 Google(Gemini)로 전송돼요. 개인정보가 찍히지 않게 해 주세요. 문제 글 없이 사진만 올려도 돼요.</p>
 			<div class="toolbar">
 				<button id="aiSolve" class="btn primary">풀어보기</button>
 				<button id="aiShowGraph" class="btn" hidden>그래프 보기</button>

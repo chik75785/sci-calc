@@ -1145,6 +1145,9 @@
 	updatePreview();
 	scheduleDraw();
 	if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+		// 새 버전이 설치되면 한 번 자동으로 새로고침해서 바로 최신 화면을 보여줍니다. (AI가 푸는 중이면 건너뜁니다.)
+		const hadController = Boolean(navigator.serviceWorker.controller);
+		navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController && !aiBusy) location.reload(); });
 		navigator.serviceWorker.register("sw.js").catch(() => { /* 오프라인 캐시 없이도 동작 */ });
 	}
 })();

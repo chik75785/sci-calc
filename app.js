@@ -10,6 +10,13 @@
 	const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
 	const palette = () => (darkQuery.matches ? PALETTES.dark : PALETTES.light);
 	const fmt = Calc.formatNumber;
+	// 라디안 모드에서는 해를 π의 분수로도 보여줍니다 (예: 5π/6 (2.618)).
+	const approx = (value) => String(parseFloat(value.toPrecision(5)));
+	const describeRoot = (root) => {
+		const pi = state.angle === "rad" ? Calc.formatPi(root) : null;
+		return pi && pi !== "0" ? pi + " (" + approx(root) + ")" : fmt(root);
+	};
+	const labelRoot = (root) => (state.angle === "rad" && Calc.formatPi(root)) || fmt(root);
 
 	// ---------- 상태 (localStorage에 저장) ----------
 	const state = (() => {
@@ -656,7 +663,7 @@
 			if (analysis.poly && analysis.coefficients.length === 1) {
 				resultEl.textContent = analysis.coefficients[0] === 0 ? "모든 x에서 성립합니다." : "해가 없습니다.";
 			} else if (roots.length) {
-				const shown = roots.slice().sort((p, q) => Math.abs(p) - Math.abs(q)).slice(0, 12).sort((p, q) => p - q).map(fmt).join(", ");
+				const shown = roots.slice().sort((p, q) => Math.abs(p) - Math.abs(q)).slice(0, 12).sort((p, q) => p - q).map(describeRoot).join(", ");
 				resultEl.textContent = (analysis.poly ? "다항식의 모든 실수 해: " : "해: ") + shown + (roots.length > 12 ? " … (총 " + roots.length + "개)" : "");
 			} else {
 				resultEl.textContent = analysis.poly ? "실수 해가 없습니다." : "해를 찾지 못했습니다.";
@@ -678,7 +685,7 @@
 				ctx.stroke();
 				if (visibleRoots.length <= 4) {
 					ctx.fillStyle = colors.error;
-					ctx.fillText("x=" + fmt(root), px + 8, py - 8);
+					ctx.fillText("x=" + labelRoot(root), px + 8, py - 8);
 				}
 			}
 		}

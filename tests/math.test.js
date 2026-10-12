@@ -90,6 +90,17 @@ test("다항식 해: 변수 포함 a*x^2 = 8", () => {
 	eq(roots.length, 2); near(roots[0], -2, 1e-9); near(roots[1], 2, 1e-9);
 });
 
+test("π 표기: 간단한 분수는 π로, 아니면 null", () => {
+	const P = Math.PI;
+	eq(engine.formatPi(P / 6), "π/6"); eq(engine.formatPi(5 * P / 6), "5π/6"); eq(engine.formatPi(-P / 2), "-π/2");
+	eq(engine.formatPi(2 * P), "2π"); eq(engine.formatPi(P), "π"); eq(engine.formatPi(0), "0"); eq(engine.formatPi(5 * P / 24), "5π/24");
+	eq(engine.formatPi(0.5), null); eq(engine.formatPi(2), null); eq(engine.formatPi(P + 0.001), null);
+});
+test("π 표기: sin(x)=0.5 의 해가 π/6, 5π/6 …", () => {
+	const roots = engine.findRoots(solver("sin(x)", "0.5"), 0, 7);
+	eq(roots.map((r) => engine.formatPi(r)).join(","), "π/6,5π/6,13π/6");
+});
+
 const failed = results.filter((r) => !r[0]);
 const summary = results.map((r) => (r[0] ? "PASS " : "FAIL ") + r[1]).join("\n") + "\n" + (results.length - failed.length) + "/" + results.length + " 통과";
 if (typeof document !== "undefined") {

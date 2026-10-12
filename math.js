@@ -223,6 +223,21 @@ const Calc = (() => {
 		return String(parseFloat(value.toPrecision(10)));
 	}
 
+	// 값이 π의 간단한 분수(분모 24 이하)와 정확히 같으면 "5π/6" 같은 문자열, 아니면 null
+	function formatPi(value, maxDenominator) {
+		if (!Number.isFinite(value)) return null;
+		if (Math.abs(value) < 1e-12) return "0";
+		const ratio = value / Math.PI;
+		for (let q = 1; q <= (maxDenominator || 24); q++) {
+			const p = Math.round(ratio * q);
+			if (p !== 0 && Math.abs(ratio * q - p) < 1e-9 * Math.max(1, Math.abs(p))) {
+				const magnitude = Math.abs(p) === 1 ? "π" : Math.abs(p) + "π";
+				return (p < 0 ? "-" : "") + magnitude + (q === 1 ? "" : "/" + q);
+			}
+		}
+		return null;
+	}
+
 	function bisect(F, a, b) {
 		let fa = F(a);
 		for (let n = 0; n < 100; n++) {
@@ -312,7 +327,7 @@ const Calc = (() => {
 		return uniqueRoots(roots);
 	}
 
-	const api = { parse, evaluate, formatNumber, findRoots, findRootsAuto, polyRealRoots, polyDeriv, polySub, FUNCS };
+	const api = { parse, evaluate, formatNumber, formatPi, findRoots, findRootsAuto, polyRealRoots, polyDeriv, polySub, FUNCS };
 	if (typeof module !== "undefined" && module.exports) module.exports = api;
 	return api;
 })();

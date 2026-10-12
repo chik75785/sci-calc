@@ -969,28 +969,59 @@
 		return data && Array.isArray(data.models) ? data.models : [];
 	}
 
+	const sleep = (ms, signal) => new Promise((resolve, reject) => {
+		const timer = setTimeout(resolve, ms);
+		signal.addEventListener("abort", () => {
+			clearTimeout(timer);
+			reject(new Error("시간이 너무 오래 걸려서 중단했어요. 다시 시도해 주세요."));
+		}, { once: true });
+	});
+	const RETRY_DELAYS = [1500, 3500];
+
+	// 서버가 바쁘면(5xx) 잠깐 기다렸다가 같은 모델로 다시 시도합니다.
+	async function callWithRetry(problem, key, model, signal) {
+		for (let attempt = 0; ; attempt++) {
+			try {
+				return await callGemini(problem, key, model, signal);
+			} catch (error) {
+				if (!Ai.isOverloadStatus(error.status) || attempt >= RETRY_DELAYS.length) throw error;
+				ai.status.textContent = "Google 서버가 바빠서 다시 시도해요… (" + (attempt + 1) + "/" + RETRY_DELAYS.length + ")";
+				await sleep(RETRY_DELAYS[attempt], signal);
+			}
+		}
+	}
+
 	async function askGemini(problem, config) {
 		const controller = new AbortController();
-		const timer = setTimeout(() => controller.abort(), 90000);
+		const timer = setTimeout(() => controller.abort(), 120000);
 		try {
 			try {
-				return await callGemini(problem, config.key, config.model, controller.signal);
+				return await callWithRetry(problem, config.key, config.model, controller.signal);
 			} catch (error) {
-				if (error.status !== 404) throw error;
-				// 모델이 없어졌거나 이 키로 쓸 수 없는 경우: 쓸 수 있는 모델을 찾아서 한 번 더 시도합니다.
+				const missing = error.status === 404;
+				if (!missing && !Ai.isOverloadStatus(error.status)) throw error;
+				// 모델이 없거나(404) 계속 바쁘면(5xx) 이 키로 쓸 수 있는 다른 모델로 시도합니다.
 				let models = [];
 				try { models = await fetchModelList(config.key, controller.signal); } catch (listError) { /* 원래 오류를 보여줌 */ }
-				const picked = Ai.pickModel(models);
-				if (!picked || picked === config.model) {
+				const alternatives = Ai.orderModels(models).filter((id) => id !== config.model).slice(0, missing ? 1 : 2);
+				if (!alternatives.length) {
 					const names = Ai.listUsableModels(models).slice(0, 6);
-					throw new Error(error.message + (names.length ? " 이 키로 쓸 수 있는 모델: " + names.join(", ") : ""));
+					throw new Error(error.message + (missing && names.length ? " 이 키로 쓸 수 있는 모델: " + names.join(", ") : ""));
 				}
-				ai.status.textContent = "모델을 " + picked + "(으)로 바꿔서 다시 시도해요…";
-				const plan = await callGemini(problem, config.key, picked, controller.signal);
-				saveAiConfig({ key: config.key, model: picked });
-				renderAiSettings();
-				plan.switchedModel = picked;
-				return plan;
+				let lastError = error;
+				for (const model of alternatives) {
+					ai.status.textContent = "모델을 " + model + "(으)로 바꿔서 다시 시도해요…";
+					try {
+						const plan = await callWithRetry(problem, config.key, model, controller.signal);
+						if (missing) { saveAiConfig({ key: config.key, model }); renderAiSettings(); }
+						plan.switchedModel = model;
+						plan.switchTemporary = !missing;
+						return plan;
+					} catch (retryError) {
+						lastError = retryError;
+					}
+				}
+				throw lastError;
 			}
 		} finally {
 			clearTimeout(timer);
@@ -1068,7 +1099,7 @@
 			add("p", "이 문제는 그래프로 그릴 수 있는 식이 없어서 풀이만 보여드려요.", "note");
 		}
 		if (plan.notes) add("p", "참고: " + plan.notes, "note");
-		if (plan.switchedModel) add("p", "모델 " + plan.switchedModel + "(으)로 자동 변경했어요. 설정에서 바꿀 수 있어요.", "note");
+		if (plan.switchedModel) add("p", plan.switchTemporary ? "서버가 바빠서 이번에는 " + plan.switchedModel + " 모델로 풀었어요." : "모델 " + plan.switchedModel + "(으)로 자동 변경했어요. 설정에서 바꿀 수 있어요.", "note");
 		if (plan.dropped.length) add("p", "앱이 해석하지 못해 제외한 식: " + plan.dropped.map((d) => d.left + " = " + d.right).join(", "), "note");
 		box.hidden = false;
 		ai.graph.hidden = !drawn;

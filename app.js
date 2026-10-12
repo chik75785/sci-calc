@@ -18,47 +18,19 @@
 	};
 	const labelRoot = (root) => (state.angle === "rad" && Calc.formatPi(root)) || fmt(root);
 
-	// ---------- 상태 (localStorage에 저장) ----------
-	const state = (() => {
-		const result = {
-			angle: "rad",
-			eqs: [{ l: "sin(x)", r: "0.5" }],
-			view: { xmin: -10, xmax: 10, ymin: -10, ymax: 10 },
-			fit: true,
-			params: {},
-			history: [],
-		};
-		try {
-			const saved = JSON.parse(localStorage.getItem(STORE_KEY));
-			if (saved && typeof saved === "object") {
-				if (saved.angle === "deg") result.angle = "deg";
-				if (Array.isArray(saved.eqs) && saved.eqs.length) {
-					result.eqs = saved.eqs.map((eq) => ({ l: String(eq.l || ""), r: String(eq.r || "") })).slice(0, 8);
-				}
-				const v = saved.view;
-				if (v && Number.isFinite(v.xmin) && Number.isFinite(v.xmax) && v.xmin < v.xmax) {
-					const hasY = Number.isFinite(v.ymin) && Number.isFinite(v.ymax) && v.ymin < v.ymax;
-					result.view = { xmin: v.xmin, xmax: v.xmax, ymin: hasY ? v.ymin : -10, ymax: hasY ? v.ymax : 10 };
-				}
-				result.fit = saved.fit !== false;
-				if (saved.params && typeof saved.params === "object") {
-					for (const [k, val] of Object.entries(saved.params)) if (Number.isFinite(val)) result.params[k] = val;
-				}
-				if (Array.isArray(saved.history)) {
-					result.history = saved.history.filter((h) => h && typeof h.expr === "string" && typeof h.result === "string").slice(0, 30);
-				}
-			}
-		} catch (error) { /* 저장소를 못 쓰는 환경 */ }
-		return result;
-	})();
-	let saveTimer = 0;
-	const scheduleSave = () => {
-		clearTimeout(saveTimer);
-		saveTimer = setTimeout(() => {
-			try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (error) { /* 무시 */ }
-		}, 300);
+	// ---------- 상태 ----------
+	// 식, 화면 범위, 변수 값, 계산 기록, 각도 단위는 저장하지 않고 열 때마다 처음 상태로 시작합니다.
+	// 브라우저에 남기는 건 AI 설정(API 키·모델) 하나뿐이에요 (아래 AI_STORE).
+	const state = {
+		angle: "rad",
+		eqs: [{ l: "sin(x)", r: "0.5" }],
+		view: { xmin: -10, xmax: 10, ymin: -10, ymax: 10 },
+		fit: true,
+		params: {},
+		history: [],
 	};
-	const angleFactor = () => (state.angle === "deg" ? Math.PI / 180 : 1);
+	// 예전 버전이 저장해 둔 값이 있으면 지웁니다.
+	try { localStorage.removeItem(STORE_KEY); } catch (error) { /* 저장소를 못 쓰는 환경 */ }	const angleFactor = () => (state.angle === "deg" ? Math.PI / 180 : 1);
 
 	// ---------- 탭 / 상단 버튼 ----------
 	function setTab(tab) {
@@ -75,7 +47,6 @@
 		renderAngle();
 		updatePreview();
 		scheduleDraw();
-		scheduleSave();
 	});
 
 	let installPrompt = null;
@@ -180,7 +151,6 @@
 			justEvaluated = true;
 			preview.textContent = "";
 			renderHistory();
-			scheduleSave();
 		} catch (error) {
 			calcMsg.textContent = errorText(error);
 		}
@@ -222,7 +192,7 @@
 			historyList.append(li);
 		}
 	}
-	$("#clearHistory").addEventListener("click", () => { state.history = []; renderHistory(); scheduleSave(); });
+	$("#clearHistory").addEventListener("click", () => { state.history = []; renderHistory(); });
 
 	// ---------- 방정식 입력 ----------
 	const eqList = $("#eqList");
@@ -250,7 +220,6 @@
 				state.eqs.splice(index, 1);
 				renderEquationRows();
 				scheduleDraw();
-				scheduleSave();
 			});
 			row.append(swatch, left, equals, right, remove);
 			eqList.append(row);
@@ -267,7 +236,7 @@
 		input.spellcheck = false;
 		input.enterKeyHint = "done";
 		input.addEventListener("focus", () => { lastEqInput = input; });
-		input.addEventListener("input", () => { eq[side] = input.value; scheduleDraw(); scheduleSave(); });
+		input.addEventListener("input", () => { eq[side] = input.value; scheduleDraw(); });
 		input.addEventListener("keydown", (event) => { if (event.key === "Enter") input.blur(); });
 		return input;
 	}
@@ -281,7 +250,6 @@
 		state.eqs.push({ l: "", r: "0" });
 		renderEquationRows();
 		eqList.querySelector(".eq-row:last-child input").focus();
-		scheduleSave();
 	});
 
 	const quickKeys = $("#quickKeys");
@@ -308,7 +276,6 @@
 		state.fit = true;
 		fitKey = null;
 		scheduleDraw();
-		scheduleSave();
 	});
 
 	const analysisCache = new Map();
@@ -424,7 +391,6 @@
 				state.params[name] = Number(slider.value);
 				number.value = fmt(state.params[name]);
 				scheduleDraw();
-				scheduleSave();
 			});
 			number.addEventListener("input", () => {
 				const value = Number(number.value);
@@ -432,7 +398,6 @@
 				state.params[name] = value;
 				slider.value = String(Math.max(-20, Math.min(20, value)));
 				scheduleDraw();
-				scheduleSave();
 			});
 			row.append(label, number, slider);
 			paramBox.append(row);
@@ -812,7 +777,6 @@
 	}
 	function viewChanged() {
 		scheduleDraw();
-		scheduleSave();
 	}
 	function panBy(dx, dy) {
 		if (!geo) return;
@@ -1044,7 +1008,6 @@
 		probeX = null;
 		renderEquationRows();
 		scheduleDraw();
-		scheduleSave();
 		return true;
 	}
 

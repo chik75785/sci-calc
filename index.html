@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>공학용 계산기</title>
+<meta name="description" content="수식 계산, 방정식 해 찾기, 그래프를 지원하는 공학용 계산기">
+<meta name="theme-color" content="#1769aa">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-tab="calc">
+<header class="topbar">
+	<h1>공학용 계산기</h1>
+	<div class="topbar-actions">
+		<button id="installBtn" class="chip" hidden>앱 설치</button>
+		<button id="angleBtn" class="chip" aria-label="각도 단위 전환">RAD</button>
+	</div>
+</header>
+
+<main class="app">
+	<section id="panelCalc" class="panel" aria-label="계산기">
+		<div class="display-wrap">
+			<input id="display" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="계산식" placeholder="0">
+			<div id="preview" class="preview" aria-live="polite"></div>
+		</div>
+		<p id="calcMsg" class="msg" role="alert"></p>
+		<div id="keypad" class="keypad"></div>
+		<div class="section-head"><h2>기록</h2><button id="clearHistory" class="link-btn">모두 지우기</button></div>
+		<ul id="history" class="history"></ul>
+	</section>
+
+	<section id="panelGraph" class="panel" aria-label="방정식과 그래프">
+		<div class="card">
+			<h2>방정식 f(x) = g(x)</h2>
+			<div id="eqList" class="eq-list"></div>
+			<div id="quickKeys" class="quick" aria-label="입력 도우미"></div>
+			<div class="toolbar">
+				<button id="addEq" class="btn">+ 식 추가</button>
+				<button id="solveBtn" class="btn primary">실수 해 찾기</button>
+			</div>
+			<p id="eqResult" class="result">예: sin(x) = 0.5 또는 x^3 - 2*x - 5 = 0</p>
+		</div>
+
+		<div class="card">
+			<div class="range-row">
+				<label>x 구간
+					<input id="xmin" inputmode="decimal" autocomplete="off" aria-label="x 최솟값">
+					<span>~</span>
+					<input id="xmax" inputmode="decimal" autocomplete="off" aria-label="x 최댓값">
+				</label>
+			</div>
+			<div class="toolbar">
+				<button id="resetRange" class="btn">범위 초기화</button>
+				<button id="autoRange" class="btn">범위 없음(자동)</button>
+				<button id="yAuto" class="btn" aria-pressed="true">Y축 자동: 켜짐</button>
+			</div>
+			<canvas id="graph" aria-label="그래프"></canvas>
+			<p class="hint">드래그: 이동 · 두 손가락 / 휠: 확대·축소 · 탭: 값 보기</p>
+			<p id="probe" class="probe" aria-live="polite"></p>
+			<div id="legend" class="legend"></div>
+		</div>
+
+		<div class="card">
+			<h2>변수 조절</h2>
+			<div id="params" class="params"><p class="hint">식에 조절 가능한 변수가 없습니다. 예: a*x^2 + b</p></div>
+		</div>
+	</section>
+</main>
+
+<nav class="tabs" aria-label="화면 전환">
+	<button data-tab-btn="calc" aria-pressed="true">계산기</button>
+	<button data-tab-btn="graph" aria-pressed="false">그래프</button>
+</nav>
+
+<script src="math.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

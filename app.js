@@ -17,6 +17,14 @@
 		return pi && pi !== "0" ? pi + " (" + approx(root) + ")" : fmt(root);
 	};
 	const labelRoot = (root) => (state.angle === "rad" && Calc.formatPi(root)) || fmt(root);
+	// 한 식의 해를 한 줄로: 원점에서 가까운 limit개만 보여줍니다.
+	const rootSummary = (analysis, limit) => {
+		if (analysis.poly && analysis.coefficients.length === 1) return analysis.coefficients[0] === 0 ? "모든 x에서 성립합니다." : "해가 없습니다.";
+		const roots = analysis.roots;
+		if (!roots.length) return analysis.poly ? "실수 해가 없습니다." : "해를 찾지 못했습니다.";
+		const shown = roots.slice().sort((p, q) => Math.abs(p) - Math.abs(q)).slice(0, limit).sort((p, q) => p - q).map(describeRoot).join(", ");
+		return (analysis.poly ? "다항식의 모든 실수 해: " : "해: ") + shown + (roots.length > limit ? " … (총 " + roots.length + "개)" : "");
+	};
 
 	// ---------- 상태 ----------
 	// 식, 화면 범위, 변수 값, 계산 기록, 각도 단위는 저장하지 않고 열 때마다 처음 상태로 시작합니다.
@@ -623,46 +631,43 @@
 			else { strokeSeries(it.ly, pair[0]); strokeSeries(it.ry, pair[1]); }
 		});
 
-		// 해 표시 (첫 번째 식)
+		// 해 표시: 모든 비교식(f = g)에 대해 곡선이 만나는 점을 찍고, 결과 문구를 만듭니다.
 		const first = valid[0] === items[0] ? valid[0] : null;
-		let roots = null;
-		if (!first) {
+		if (explicit.length > 1 || (explicit.length === 1 && explicit[0] !== first)) {
+			resultEl.textContent = explicit.map((it) => "식 " + (it.index + 1) + ": " + rootSummary(analyses.get(it), 6)).join("\n");
+		} else if (!first) {
 			resultEl.textContent = "첫 번째 식을 확인해 주세요.";
 		} else if (first.implicit) {
 			resultEl.textContent = "y가 포함된 식은 그래프만 지원합니다.";
 		} else {
-			const analysis = analyses.get(first);
-			roots = analysis.roots;
-			if (analysis.poly && analysis.coefficients.length === 1) {
-				resultEl.textContent = analysis.coefficients[0] === 0 ? "모든 x에서 성립합니다." : "해가 없습니다.";
-			} else if (roots.length) {
-				const shown = roots.slice().sort((p, q) => Math.abs(p) - Math.abs(q)).slice(0, 12).sort((p, q) => p - q).map(describeRoot).join(", ");
-				resultEl.textContent = (analysis.poly ? "다항식의 모든 실수 해: " : "해: ") + shown + (roots.length > 12 ? " … (총 " + roots.length + "개)" : "");
-			} else {
-				resultEl.textContent = analysis.poly ? "실수 해가 없습니다." : "해를 찾지 못했습니다.";
-			}
-			ctx.font = "12px system-ui, sans-serif";
-			ctx.textAlign = "left";
-			const visibleRoots = roots.filter((root) => root >= xmin && root <= xmax);
-			for (const root of visibleRoots) {
+			resultEl.textContent = rootSummary(analyses.get(first), 12);
+		}
+		const markers = [];
+		for (const it of explicit) {
+			for (const root of analyses.get(it).roots) {
+				if (root < xmin || root > xmax) continue;
 				env.x = root;
-				const value = first.L.fn(env);
-				if (!Number.isFinite(value)) continue;
-				const px = X(root), py = Y(value);
-				ctx.fillStyle = "#c0392b";
-				ctx.beginPath();
-				ctx.arc(px, py, 5, 0, Math.PI * 2);
-				ctx.fill();
-				ctx.strokeStyle = "#ffffff";
-				ctx.lineWidth = 1.5;
-				ctx.stroke();
-				if (visibleRoots.length <= 4) {
-					ctx.fillStyle = colors.error;
-					ctx.fillText("x=" + labelRoot(root), px + 8, py - 8);
-				}
+				const value = it.L.fn(env);
+				if (Number.isFinite(value)) markers.push({ root, value, color: explicit.length > 1 ? colorsByEq[it.index % 4][0] : "#c0392b" });
 			}
 		}
-
+		ctx.font = "12px system-ui, sans-serif";
+		ctx.textAlign = "left";
+		for (const m of markers) {
+			const px = X(m.root), py = Y(m.value);
+			ctx.fillStyle = "#ffffff";
+			ctx.beginPath();
+			ctx.arc(px, py, 6.5, 0, Math.PI * 2);
+			ctx.fill();
+			ctx.fillStyle = m.color;
+			ctx.beginPath();
+			ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+			ctx.fill();
+			if (markers.length <= 4) {
+				ctx.fillStyle = m.color;
+				ctx.fillText("x=" + labelRoot(m.root), px + 9, py - 9);
+			}
+		}
 		// 탭한 지점 값 표시
 		if (probeX !== null && probeX >= xmin && probeX <= xmax && explicit.length) {
 			ctx.strokeStyle = colors.axis;
@@ -1011,18 +1016,17 @@
 		return true;
 	}
 
-	// 앱의 엔진이 직접 계산한 해 (AI가 계산을 틀려도 이 값은 정확합니다).
-	function verifyText() {
-		const first = analyze().items[0];
-		if (!first || first.error || first.implicit) return "";
+	// 앱의 엔진이 직접 계산한 해를 식마다 보여줍니다 (AI가 계산을 틀려도 이 값은 정확합니다).
+	function verifyLines(plan) {
 		const env = Object.assign({ x: 0, y: 0 }, state.params, { angle: angleFactor() });
-		const a = analysisFor(first, env);
-		if (a.poly && a.coefficients.length === 1) return a.coefficients[0] === 0 ? "모든 x에서 성립해요." : "실수 해가 없어요.";
-		if (!a.roots.length) return "실수 해를 찾지 못했어요.";
-		const shown = a.roots.slice().sort((p, q) => Math.abs(p) - Math.abs(q)).slice(0, 8).sort((p, q) => p - q).map(describeRoot).join(", ");
-		return (a.poly ? "다항식의 모든 실수 해: " : "해: ") + shown + (a.roots.length > 8 ? " … (총 " + a.roots.length + "개)" : "");
+		const lines = [];
+		for (const item of analyze().items) {
+			if (item.error || item.implicit) continue;
+			const label = (plan.equations[item.index] && plan.equations[item.index].label) || item.l + " = " + item.r;
+			lines.push(label + " → " + rootSummary(analysisFor(item, env), 8));
+		}
+		return lines;
 	}
-
 	function renderAiResult(plan, drawn) {
 		const box = ai.result;
 		box.innerHTML = "";
@@ -1056,8 +1060,18 @@
 				list.append(li);
 			}
 			box.append(list);
-			const verify = verifyText();
-			if (verify) add("p", "앱이 직접 계산한 결과 (첫 번째 식 기준): " + verify, "verify");
+			const verify = verifyLines(plan);
+			if (verify.length) {
+				add("p", "앱이 직접 계산한 결과 (x에 대한 해, 곡선이 만나는 점의 x좌표)", "note");
+				const checks = document.createElement("ul");
+				checks.className = "verify";
+				for (const line of verify) {
+					const li = document.createElement("li");
+					li.textContent = line;
+					checks.append(li);
+				}
+				box.append(checks);
+			}
 			const names = Object.keys(state.params);
 			if (names.length) add("p", "그래프 탭 아래 '변수 조절'에서 " + names.map((n) => n + "(시작값 " + fmt(state.params[n]) + ")").join(", ") + "를 움직여 보세요.", "note");
 		} else {

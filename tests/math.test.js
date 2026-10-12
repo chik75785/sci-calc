@@ -132,6 +132,22 @@ test("AI 오류 문구", () => {
 	eq(ai.describeHttpError(404, null).includes("모델"), true);
 	eq(ai.describeHttpError(503, null).includes("서버"), true);
 });
+const modelEntry = (name, methods) => ({ name: "models/" + name, supportedGenerationMethods: methods || ["generateContent"] });
+test("AI 모델 선택: 선호 순서대로, 생성 불가·이미지·음성 모델은 제외", () => {
+	const models = [
+		modelEntry("gemini-2.5-flash"), modelEntry("gemini-3.6-flash"), modelEntry("gemini-3.8-flash-tts"),
+		modelEntry("gemini-3.8-flash-image"), modelEntry("gemini-3.8-flash", ["countTokens"]), modelEntry("text-embedding-004", ["embedContent"]),
+	];
+	eq(ai.pickModel(models), "gemini-3.6-flash");
+	eq(ai.listUsableModels(models).join(","), "gemini-2.5-flash,gemini-3.6-flash");
+});
+test("AI 모델 선택: 선호 목록에 없으면 다른 Flash, 없으면 null", () => {
+	eq(ai.pickModel([modelEntry("gemini-9-flash"), modelEntry("gemini-9-flash-preview")]), "gemini-9-flash");
+	eq(ai.pickModel([modelEntry("gemini-9-flash-preview")]), "gemini-9-flash-preview");
+	eq(ai.pickModel([modelEntry("gemini-9-pro")]), null);
+	eq(ai.pickModel([]), null); eq(ai.pickModel(null), null); eq(ai.pickModel([null, 3, {}]), null);
+});
+test("AI 기본 모델은 gemini-3.8-flash", () => { eq(ai.DEFAULT_MODEL, "gemini-3.8-flash"); });
 test("AI 프롬프트: 각도 단위와 최대 식 개수 반영", () => {
 	eq(ai.buildSystemPrompt("deg").includes("도(DEG)"), true);
 	eq(ai.buildSystemPrompt("rad").includes("라디안"), true);

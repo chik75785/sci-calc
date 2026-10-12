@@ -3,7 +3,10 @@
 // AI(Gemini) 연동에서 네트워크와 무관한 부분: 프롬프트, 응답 해석, 식 검증, 오류 문구.
 const Ai = (() => {
 	const MAX_EQUATIONS = 4;
-	const DEFAULT_MODEL = "gemini-2.5-flash";
+	const DEFAULT_MODEL = "gemini-3.8-flash";
+	// 모델 목록에서 고를 때의 선호 순서 (무료 티어가 있는 Flash 계열).
+	const PREFERRED_MODELS = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+	const EXCLUDED_MODEL = /image|tts|live|audio|transcribe|translate|embedding|robotics|computer|veo|lyria|omni|gemma|learnlm/i;
 
 	function buildSystemPrompt(unit) {
 		return [
@@ -87,7 +90,25 @@ const Ai = (() => {
 		return "AI 호출에 실패했어요 (" + status + "). " + detail.slice(0, 120);
 	}
 
-	const api = { MAX_EQUATIONS, DEFAULT_MODEL, buildSystemPrompt, extractJson, sanitizePlan, describeHttpError };
+	// models.list 응답(models 배열)에서 글 생성에 쓸 수 있는 Flash 모델을 고릅니다. 없으면 null.
+	function listUsableModels(models) {
+		const ids = [];
+		for (const model of Array.isArray(models) ? models : []) {
+			if (!model || typeof model !== "object") continue;
+			const methods = Array.isArray(model.supportedGenerationMethods) ? model.supportedGenerationMethods : [];
+			const id = String(model.baseModelId || model.name || "").replace(/^models\//, "");
+			if (!/^gemini-/.test(id) || EXCLUDED_MODEL.test(id) || !methods.includes("generateContent")) continue;
+			if (!ids.includes(id)) ids.push(id);
+		}
+		return ids;
+	}
+	function pickModel(models) {
+		const ids = listUsableModels(models);
+		for (const preferred of PREFERRED_MODELS) if (ids.includes(preferred)) return preferred;
+		return ids.find((id) => /flash/.test(id) && !/preview/.test(id)) || ids.find((id) => /flash/.test(id)) || null;
+	}
+
+	const api = { MAX_EQUATIONS, DEFAULT_MODEL, buildSystemPrompt, extractJson, sanitizePlan, describeHttpError, listUsableModels, pickModel };
 	if (typeof module !== "undefined" && module.exports) module.exports = api;
 	return api;
 })();

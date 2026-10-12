@@ -927,44 +927,75 @@
 		renderAiSettings();
 	});
 
-	async function askGemini(problem, config) {
-		const url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(config.model) + ":generateContent";
+	const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
+
+	// 한 번 호출합니다. HTTP 오류는 status 를 붙여서 던집니다.
+	async function callGemini(problem, key, model, signal) {
 		const body = {
 			systemInstruction: { parts: [{ text: Ai.buildSystemPrompt(state.angle) }] },
 			contents: [{ role: "user", parts: [{ text: "문제:\n" + problem }] }],
 			generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
 		};
+		let response;
+		try {
+			response = await fetch(GEMINI_BASE + "/models/" + encodeURIComponent(model) + ":generateContent", {
+				method: "POST",
+				headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+				body: JSON.stringify(body),
+				signal,
+			});
+		} catch (error) {
+			if (error.name === "AbortError") throw new Error("시간이 너무 오래 걸려서 중단했어요. 다시 시도해 주세요.");
+			throw new Error("AI 서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.");
+		}
+		const text = await response.text();
+		let data = null;
+		try { data = JSON.parse(text); } catch (error) { /* JSON 아님 */ }
+		if (!response.ok) throw Object.assign(new Error(Ai.describeHttpError(response.status, data)), { status: response.status });
+		const candidate = data && data.candidates && data.candidates[0];
+		const output = ((candidate && candidate.content && candidate.content.parts) || []).map((part) => part.text || "").join("").trim();
+		if (!output) {
+			const reason = (data && data.promptFeedback && data.promptFeedback.blockReason) || (candidate && candidate.finishReason) || "";
+			throw new Error("AI가 답을 주지 않았어요" + (reason ? " (" + reason + ")" : "") + ". 문제를 다르게 표현해 보세요.");
+		}
+		return Ai.sanitizePlan(Ai.extractJson(output), Calc.parse);
+	}
+
+	// 이 키로 쓸 수 있는 모델 목록을 Google에서 조회합니다.
+	async function fetchModelList(key, signal) {
+		const response = await fetch(GEMINI_BASE + "/models?pageSize=200", { headers: { "x-goog-api-key": key }, signal });
+		if (!response.ok) return [];
+		const data = await response.json().catch(() => null);
+		return data && Array.isArray(data.models) ? data.models : [];
+	}
+
+	async function askGemini(problem, config) {
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), 90000);
 		try {
-			let response;
 			try {
-				response = await fetch(url, {
-					method: "POST",
-					headers: { "Content-Type": "application/json", "x-goog-api-key": config.key },
-					body: JSON.stringify(body),
-					signal: controller.signal,
-				});
+				return await callGemini(problem, config.key, config.model, controller.signal);
 			} catch (error) {
-				if (error.name === "AbortError") throw new Error("시간이 너무 오래 걸려서 중단했어요. 다시 시도해 주세요.");
-				throw new Error("AI 서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.");
+				if (error.status !== 404) throw error;
+				// 모델이 없어졌거나 이 키로 쓸 수 없는 경우: 쓸 수 있는 모델을 찾아서 한 번 더 시도합니다.
+				let models = [];
+				try { models = await fetchModelList(config.key, controller.signal); } catch (listError) { /* 원래 오류를 보여줌 */ }
+				const picked = Ai.pickModel(models);
+				if (!picked || picked === config.model) {
+					const names = Ai.listUsableModels(models).slice(0, 6);
+					throw new Error(error.message + (names.length ? " 이 키로 쓸 수 있는 모델: " + names.join(", ") : ""));
+				}
+				ai.status.textContent = "모델을 " + picked + "(으)로 바꿔서 다시 시도해요…";
+				const plan = await callGemini(problem, config.key, picked, controller.signal);
+				saveAiConfig({ key: config.key, model: picked });
+				renderAiSettings();
+				plan.switchedModel = picked;
+				return plan;
 			}
-			const text = await response.text();
-			let data = null;
-			try { data = JSON.parse(text); } catch (error) { /* JSON 아님 */ }
-			if (!response.ok) throw new Error(Ai.describeHttpError(response.status, data));
-			const candidate = data && data.candidates && data.candidates[0];
-			const output = ((candidate && candidate.content && candidate.content.parts) || []).map((part) => part.text || "").join("").trim();
-			if (!output) {
-				const reason = (data && data.promptFeedback && data.promptFeedback.blockReason) || (candidate && candidate.finishReason) || "";
-				throw new Error("AI가 답을 주지 않았어요" + (reason ? " (" + reason + ")" : "") + ". 문제를 다르게 표현해 보세요.");
-			}
-			return Ai.sanitizePlan(Ai.extractJson(output), Calc.parse);
 		} finally {
 			clearTimeout(timer);
 		}
 	}
-
 	// AI가 만든 식을 그래프 탭에 적용합니다. 모르는 한 글자 변수는 슬라이더 1로 시작합니다.
 	function applyPlan(plan) {
 		if (!plan.equations.length) return false;
@@ -1037,6 +1068,7 @@
 			add("p", "이 문제는 그래프로 그릴 수 있는 식이 없어서 풀이만 보여드려요.", "note");
 		}
 		if (plan.notes) add("p", "참고: " + plan.notes, "note");
+		if (plan.switchedModel) add("p", "모델 " + plan.switchedModel + "(으)로 자동 변경했어요. 설정에서 바꿀 수 있어요.", "note");
 		if (plan.dropped.length) add("p", "앱이 해석하지 못해 제외한 식: " + plan.dropped.map((d) => d.left + " = " + d.right).join(", "), "note");
 		box.hidden = false;
 		ai.graph.hidden = !drawn;

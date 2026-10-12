@@ -172,6 +172,19 @@ test("AI 메시지: 잘못된 사진 항목은 버리고 최대 장수만 사용
 	eq(ai.buildUserParts("q", Array.from({ length: 9 }, () => good)).filter((p) => p.inlineData).length, ai.MAX_IMAGES);
 });
 test("AI 프롬프트: 사진 안내 포함", () => { eq(ai.buildSystemPrompt("rad").includes("사진이 첨부되면"), true); });
+test("AI 매개변수 시작값: 한 글자 소문자만, x·y·e 제외, 숫자만, -20~20 으로 제한", () => {
+	const p = ai.sanitizeParams({ k: 2, t: "1.5", x: 3, y: 4, e: 5, kk: 6, K: 7, a: 99, b: -99, c: "abc", d: null, f: Infinity, g: "", h: 0.123456 });
+	eq(JSON.stringify(p), JSON.stringify({ k: 2, t: 1.5, a: 20, b: -20, h: 0.12 }));
+	eq(JSON.stringify(ai.sanitizeParams(null)), "{}"); eq(JSON.stringify(ai.sanitizeParams([1, 2])), "{}"); eq(JSON.stringify(ai.sanitizeParams("k=2")), "{}");
+});
+test("AI 응답: params 가 plan 에 포함됨 (없으면 빈 객체)", () => {
+	eq(ai.sanitizePlan({ equations: [], params: { k: 2 } }, engine.parse).params.k, 2);
+	eq(JSON.stringify(ai.sanitizePlan({ equations: [] }, engine.parse).params), "{}");
+});
+test("AI 프롬프트: 매개변수를 고정하지 말고 문자 그대로 쓰라고 안내", () => {
+	const prompt = ai.buildSystemPrompt("rad");
+	eq(prompt.includes("그 문자를 식에 그대로") && prompt.includes("슬라이더") && prompt.includes('"params"'), true);
+});
 test("AI 기본 모델은 gemini-3.8-flash", () => { eq(ai.DEFAULT_MODEL, "gemini-3.8-flash"); });
 test("AI 프롬프트: 각도 단위와 최대 식 개수 반영", () => {
 	eq(ai.buildSystemPrompt("deg").includes("도(DEG)"), true);

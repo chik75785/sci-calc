@@ -4,6 +4,8 @@
 const Ai = (() => {
 	const MAX_EQUATIONS = 4;
 	const DEFAULT_MODEL = "gemini-3.8-flash";
+	const MAX_IMAGES = 3;
+	const MAX_IMAGE_SIDE = 1600;
 	// 모델 목록에서 고를 때의 선호 순서 (무료 티어가 있는 Flash 계열).
 	const PREFERRED_MODELS = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
 	const EXCLUDED_MODEL = /image|tts|live|audio|transcribe|translate|embedding|robotics|computer|veo|lyria|omni|gemma|learnlm/i;
@@ -31,8 +33,24 @@ const Ai = (() => {
 			"- 삼각형·사각형 같은 도형, 점·선분, 통계, 증명처럼 그래프로 그릴 수 없는 문제는 equations를 빈 배열로 두고 steps와 answer에 풀이만 쓰세요.",
 			"- 삼각함수는 앱의 현재 각도 단위에 맞추세요. 현재 단위: " + (unit === "deg" ? "도(DEG)" : "라디안(RAD, pi 사용)") + ".",
 			"",
+			"- 사진이 첨부되면 사진 속 수학 문제(손글씨 포함)를 읽고 풉니다. 글씨나 그림이 불확실하면 어떻게 읽었는지 notes에 적고, 읽은 문제 내용은 title에 요약하세요.",
+			"",
 			"steps는 3~8개의 짧은 한국어 문장, answer는 값만 간단히 씁니다. 확실하지 않으면 notes에 추측임을 밝히세요.",
 		].join("\n");
+	}
+
+	// 사용자 메시지의 parts: 사진(있으면) 먼저, 그다음 문제 글. 글이 없으면 사진 속 문제를 풀라고 요청합니다.
+	function buildUserParts(problem, images) {
+		const parts = [];
+		for (const image of Array.isArray(images) ? images : []) {
+			if (parts.length >= MAX_IMAGES) break;
+			if (image && /^image\/[a-z0-9.+-]+$/i.test(image.mimeType) && typeof image.data === "string" && image.data) {
+				parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
+			}
+		}
+		const text = typeof problem === "string" ? problem.trim() : "";
+		parts.push({ text: text ? "문제:\n" + text : "첨부한 사진 속 수학 문제를 풀어 주세요." });
+		return parts;
 	}
 
 	// 모델이 코드블록이나 군더더기를 붙여도 JSON 객체만 꺼냅니다.
@@ -117,7 +135,7 @@ const Ai = (() => {
 		return orderModels(models)[0] || null;
 	}
 
-	const api = { MAX_EQUATIONS, DEFAULT_MODEL, buildSystemPrompt, extractJson, sanitizePlan, describeHttpError, listUsableModels, orderModels, pickModel, isOverloadStatus };
+	const api = { MAX_EQUATIONS, MAX_IMAGES, MAX_IMAGE_SIDE, buildUserParts, DEFAULT_MODEL, buildSystemPrompt, extractJson, sanitizePlan, describeHttpError, listUsableModels, orderModels, pickModel, isOverloadStatus };
 	if (typeof module !== "undefined" && module.exports) module.exports = api;
 	return api;
 })();

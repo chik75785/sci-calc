@@ -149,6 +149,13 @@ textarea, #aiKey, .field input {
 .field { display: grid; gap: 4px; margin-top: 8px; font-size: .9rem; color: var(--muted); }
 details.card summary { cursor: pointer; font-weight: 600; }
 details.card[open] summary { margin-bottom: 8px; }
+.attach-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.btn:disabled { opacity: .5; cursor: default; }
+.thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.thumbs:empty { display: none; }
+.thumb { position: relative; width: 88px; height: 88px; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); display: block; }
+.thumb button { position: absolute; top: -6px; right: -6px; width: 26px; height: 26px; border-radius: 50%; border: 0; background: var(--danger-bg); color: var(--danger-ink); font-size: 1rem; line-height: 1; }
 .ai-result h3 { margin: 0 0 6px; font-size: 1.05rem; }
 .ai-result .answer { background: var(--op-bg); color: var(--op-ink); border-radius: 10px; padding: 8px 12px; font-weight: 700; margin: 8px 0; word-break: break-word; }
 .ai-result ol, .ai-result ul { margin: 6px 0; padding-left: 1.3em; }

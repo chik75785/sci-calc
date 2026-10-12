@@ -930,10 +930,10 @@
 	const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 	// 한 번 호출합니다. HTTP 오류는 status 를 붙여서 던집니다.
-	async function callGemini(problem, key, model, signal) {
+	async function callGemini(request, key, model, signal) {
 		const body = {
 			systemInstruction: { parts: [{ text: Ai.buildSystemPrompt(state.angle) }] },
-			contents: [{ role: "user", parts: [{ text: "문제:\n" + problem }] }],
+			contents: [{ role: "user", parts: Ai.buildUserParts(request.problem, request.images) }],
 			generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
 		};
 		let response;
@@ -979,10 +979,10 @@
 	const RETRY_DELAYS = [1500, 3500];
 
 	// 서버가 바쁘면(5xx) 잠깐 기다렸다가 같은 모델로 다시 시도합니다.
-	async function callWithRetry(problem, key, model, signal) {
+	async function callWithRetry(request, key, model, signal) {
 		for (let attempt = 0; ; attempt++) {
 			try {
-				return await callGemini(problem, key, model, signal);
+				return await callGemini(request, key, model, signal);
 			} catch (error) {
 				if (!Ai.isOverloadStatus(error.status) || attempt >= RETRY_DELAYS.length) throw error;
 				ai.status.textContent = "Google 서버가 바빠서 다시 시도해요… (" + (attempt + 1) + "/" + RETRY_DELAYS.length + ")";
@@ -991,12 +991,12 @@
 		}
 	}
 
-	async function askGemini(problem, config) {
+	async function askGemini(request, config) {
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), 120000);
 		try {
 			try {
-				return await callWithRetry(problem, config.key, config.model, controller.signal);
+				return await callWithRetry(request, config.key, config.model, controller.signal);
 			} catch (error) {
 				const missing = error.status === 404;
 				if (!missing && !Ai.isOverloadStatus(error.status)) throw error;
@@ -1012,7 +1012,7 @@
 				for (const model of alternatives) {
 					ai.status.textContent = "모델을 " + model + "(으)로 바꿔서 다시 시도해요…";
 					try {
-						const plan = await callWithRetry(problem, config.key, model, controller.signal);
+						const plan = await callWithRetry(request, config.key, model, controller.signal);
 						if (missing) { saveAiConfig({ key: config.key, model }); renderAiSettings(); }
 						plan.switchedModel = model;
 						plan.switchTemporary = !missing;
@@ -1105,23 +1105,100 @@
 		ai.graph.hidden = !drawn;
 	}
 
+	// ---------- 사진 첨부 ----------
+	// 사진은 브라우저에서 줄이고(긴 변 1600px, JPEG) Gemini로 그대로 전달합니다. 이 앱은 사진을 어디에도 저장하지 않아요.
+	const aiImages = [];
+	const thumbs = $("#aiThumbs");
+	const imageInput = $("#aiImage");
+	const attachBtn = $("#aiAttachBtn");
+	function renderThumbs() {
+		thumbs.innerHTML = "";
+		aiImages.forEach((image, index) => {
+			const item = document.createElement("div");
+			item.className = "thumb";
+			const img = document.createElement("img");
+			img.src = image.url;
+			img.alt = "첨부 사진 " + (index + 1);
+			const remove = document.createElement("button");
+			remove.type = "button";
+			remove.textContent = "×";
+			remove.setAttribute("aria-label", "사진 " + (index + 1) + " 삭제");
+			remove.addEventListener("click", () => {
+				URL.revokeObjectURL(image.url);
+				aiImages.splice(aiImages.indexOf(image), 1);
+				renderThumbs();
+			});
+			item.append(img, remove);
+			thumbs.append(item);
+		});
+		attachBtn.disabled = aiImages.length >= Ai.MAX_IMAGES;
+		$("#aiAttachHint").textContent = aiImages.length ? aiImages.length + "/" + Ai.MAX_IMAGES + "장 첨부됨" : "최대 " + Ai.MAX_IMAGES + "장";
+	}
+	async function shrinkImage(file) {
+		let bitmap;
+		try { bitmap = await createImageBitmap(file); } catch (error) { throw new Error("이 사진 형식을 읽지 못했어요. JPG나 PNG로 다시 시도해 주세요."); }
+		const scale = Math.min(1, Ai.MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height));
+		const canvas = document.createElement("canvas");
+		canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+		canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+		const context = canvas.getContext("2d");
+		context.fillStyle = "#ffffff"; // 투명한 PNG는 흰 배경으로
+		context.fillRect(0, 0, canvas.width, canvas.height);
+		context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+		if (bitmap.close) bitmap.close();
+		const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+		if (!blob) throw new Error("사진을 줄이지 못했어요. 다른 사진으로 시도해 주세요.");
+		const data = await new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+			reader.onerror = () => reject(new Error("사진을 읽지 못했어요."));
+			reader.readAsDataURL(blob);
+		});
+		return { mimeType: "image/jpeg", data, url: URL.createObjectURL(blob) };
+	}
+	async function addImageFiles(files) {
+		ai.status.className = "msg";
+		ai.status.textContent = "";
+		const list = [...files].filter((file) => /^image\//.test(file.type));
+		if (!list.length) { if (files.length) ai.status.textContent = "이미지 파일만 첨부할 수 있어요."; return; }
+		const room = Math.max(0, Ai.MAX_IMAGES - aiImages.length);
+		if (list.length > room) ai.status.textContent = "사진은 최대 " + Ai.MAX_IMAGES + "장까지 첨부할 수 있어요.";
+		for (const file of list.slice(0, room)) {
+			try { aiImages.push(await shrinkImage(file)); } catch (error) { ai.status.textContent = error.message; }
+		}
+		renderThumbs();
+	}
+	attachBtn.addEventListener("click", () => imageInput.click());
+	imageInput.addEventListener("change", async () => {
+		const files = [...imageInput.files];
+		imageInput.value = "";
+		await addImageFiles(files);
+	});
+	// 클립보드의 이미지를 문제 입력칸에 붙여넣어도 첨부됩니다.
+	ai.problem.addEventListener("paste", (event) => {
+		const files = [...((event.clipboardData && event.clipboardData.files) || [])].filter((file) => /^image\//.test(file.type));
+		if (files.length) { event.preventDefault(); addImageFiles(files); }
+	});
+	renderThumbs();
+
 	let aiBusy = false;
 	async function solveWithAi() {
 		if (aiBusy) return;
 		const problem = ai.problem.value.trim();
+		const images = aiImages.map(({ mimeType, data }) => ({ mimeType, data }));
 		const config = loadAiConfig();
 		ai.status.className = "msg";
 		ai.status.textContent = "";
-		if (!problem) { ai.status.textContent = "문제를 입력해 주세요."; return; }
+		if (!problem && !images.length) { ai.status.textContent = "문제를 입력하거나 사진을 첨부해 주세요."; return; }
 		if (!config.key) { ai.status.textContent = "먼저 아래 'AI 설정'에서 API 키를 저장해 주세요."; ai.settings.open = true; return; }
 		aiBusy = true;
 		ai.solve.disabled = true;
 		ai.graph.hidden = true;
 		ai.result.hidden = true;
 		ai.status.className = "hint";
-		ai.status.textContent = "AI가 푸는 중이에요… (보통 5~20초)";
+		ai.status.textContent = images.length ? "사진을 읽고 푸는 중이에요… (보통 10~30초)" : "AI가 푸는 중이에요… (보통 5~20초)";
 		try {
-			const plan = await askGemini(problem, config);
+			const plan = await askGemini({ problem, images }, config);
 			const drawn = applyPlan(plan);
 			renderAiResult(plan, drawn);
 			ai.status.textContent = "";

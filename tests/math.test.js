@@ -157,6 +157,21 @@ test("AI 서버 바쁨 판별과 오류 문구에 상태 코드·원인 포함",
 	const message = ai.describeHttpError(503, { error: { message: "The model is overloaded. Please try again later." } });
 	eq(message.includes("503") && message.includes("overloaded"), true);
 });
+test("AI 메시지: 사진은 먼저, 글은 마지막. 글이 없으면 사진 속 문제를 풀라고 요청", () => {
+	const image = { mimeType: "image/jpeg", data: "QUJD" };
+	const parts = ai.buildUserParts(" x^2=4 ", [image, image]);
+	eq(parts.length, 3); eq(parts[0].inlineData.mimeType, "image/jpeg"); eq(parts[0].inlineData.data, "QUJD"); eq(parts[2].text, "문제:\nx^2=4");
+	eq(ai.buildUserParts("", [image])[1].text.includes("사진 속 수학 문제"), true);
+	eq(ai.buildUserParts("문제", []).length, 1); eq(ai.buildUserParts("문제").length, 1);
+});
+test("AI 메시지: 잘못된 사진 항목은 버리고 최대 장수만 사용", () => {
+	const good = { mimeType: "image/png", data: "QQ==" };
+	const parts = ai.buildUserParts("q", [good, { mimeType: "text/html", data: "x" }, { mimeType: "image/png", data: "" }, null, good, good, good, good]);
+	eq(parts.filter((p) => p.inlineData).length, ai.MAX_IMAGES);
+	eq(ai.buildUserParts("q", [{ mimeType: "text/html", data: "x" }, null, good]).filter((p) => p.inlineData).length, 1);
+	eq(ai.buildUserParts("q", Array.from({ length: 9 }, () => good)).filter((p) => p.inlineData).length, ai.MAX_IMAGES);
+});
+test("AI 프롬프트: 사진 안내 포함", () => { eq(ai.buildSystemPrompt("rad").includes("사진이 첨부되면"), true); });
 test("AI 기본 모델은 gemini-3.8-flash", () => { eq(ai.DEFAULT_MODEL, "gemini-3.8-flash"); });
 test("AI 프롬프트: 각도 단위와 최대 식 개수 반영", () => {
 	eq(ai.buildSystemPrompt("deg").includes("도(DEG)"), true);

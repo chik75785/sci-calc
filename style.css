@@ -16,6 +16,8 @@
 	--canvas-bg: #ffffff;
 	--grid: #e3e9f0;
 	--axis: #7a8797;
+	--axis-x: #e03131;
+	--axis-y: #2f9e44;
 	--error: #c0392b;
 	color-scheme: light dark;
 }
@@ -37,6 +39,8 @@
 		--canvas-bg: #121b28;
 		--grid: #243246;
 		--axis: #8696ab;
+		--axis-x: #ff6b6b;
+		--axis-y: #51cf66;
 		--error: #ff7b6b;
 	}
 }
@@ -122,8 +126,10 @@ body[data-tab="calc"] #panelCalc, body[data-tab="graph"] #panelGraph { display: 
 .hint { color: var(--muted); font-size: .85rem; margin: 6px 0; }
 .probe { margin: 0; font-size: .9rem; min-height: 1.3em; word-break: break-word; }
 
-.range-row label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.range-row input { width: 5.5em; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 8px 10px; }
+.axis-key { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--muted); }
+.axis-key .ax { width: 16px; height: 3px; border-radius: 2px; display: inline-block; }
+.axis-key .ax.x { background: var(--axis-x); }
+.axis-key .ax.y { background: var(--axis-y); margin-left: 8px; }
 
 #graph { display: block; width: 100%; aspect-ratio: 1 / 1; max-height: 75vh; touch-action: none; background: var(--canvas-bg); border: 1px solid var(--line); border-radius: 10px; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; font-size: .85rem; }

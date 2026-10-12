@@ -16,9 +16,8 @@
 		const result = {
 			angle: "rad",
 			eqs: [{ l: "sin(x)", r: "0.5" }],
-			view: { xmin: -10, xmax: 10, ymin: -10, ymax: 10 },
-			autoRange: false,
-			autoY: true,
+			view: { xmin: -10, xmax: 10, yc: 0 },
+			fit: true,
 			params: {},
 			history: [],
 		};
@@ -30,9 +29,10 @@
 					result.eqs = saved.eqs.map((eq) => ({ l: String(eq.l || ""), r: String(eq.r || "") })).slice(0, 8);
 				}
 				const v = saved.view;
-				if (v && [v.xmin, v.xmax, v.ymin, v.ymax].every(Number.isFinite) && v.xmin < v.xmax && v.ymin < v.ymax) result.view = v;
-				result.autoRange = saved.autoRange === true;
-				result.autoY = saved.autoY !== false;
+				if (v && Number.isFinite(v.xmin) && Number.isFinite(v.xmax) && v.xmin < v.xmax) {
+					result.view = { xmin: v.xmin, xmax: v.xmax, yc: Number.isFinite(v.yc) ? v.yc : 0 };
+				}
+				result.fit = saved.fit !== false;
 				if (saved.params && typeof saved.params === "object") {
 					for (const [k, val] of Object.entries(saved.params)) if (Number.isFinite(val)) result.params[k] = val;
 				}
@@ -275,7 +275,6 @@
 		eqList.querySelector(".eq-row:last-child input").focus();
 		scheduleSave();
 	});
-	$("#solveBtn").addEventListener("click", () => { scheduleDraw(); });
 
 	const quickKeys = $("#quickKeys");
 	for (const [text, label] of [["x"], ["y"], ["^"], ["("], [")"], ["pi", "π"], ["sin("], ["cos("], ["tan("], ["sqrt(", "√"], ["ln("], ["abs("]]) {
@@ -292,63 +291,67 @@
 	}
 	quickKeys.addEventListener("mousedown", (event) => event.preventDefault());
 
-	// ---------- 구간 입력 ----------
-	const xminInput = $("#xmin");
-	const xmaxInput = $("#xmax");
-	function syncRange() {
-		if (document.activeElement === xminInput || document.activeElement === xmaxInput) return;
-		xminInput.value = state.autoRange ? "" : fmt(state.view.xmin);
-		xmaxInput.value = state.autoRange ? "" : fmt(state.view.xmax);
-	}
-	function onRangeInput() {
-		const lo = xminInput.value.trim(), hi = xmaxInput.value.trim();
-		if (!lo && !hi) { setAutoRange(); return; }
-		const min = Number(lo), max = Number(hi);
-		if (lo && hi && Number.isFinite(min) && Number.isFinite(max) && min < max) {
-			state.view.xmin = min;
-			state.view.xmax = max;
-			state.autoRange = false;
-			scheduleDraw();
-			scheduleSave();
-		}
-	}
-	xminInput.addEventListener("input", onRangeInput);
-	xmaxInput.addEventListener("input", onRangeInput);
-	xminInput.addEventListener("blur", syncRange);
-	xmaxInput.addEventListener("blur", syncRange);
-	function setAutoRange() {
-		state.view.xmin = -10;
-		state.view.xmax = 10;
-		state.autoRange = true;
-		state.autoY = true;
-		renderYAuto();
-		syncRange();
-		scheduleDraw();
-		scheduleSave();
-	}
-	$("#autoRange").addEventListener("click", () => { xminInput.value = ""; xmaxInput.value = ""; setAutoRange(); });
-	$("#resetRange").addEventListener("click", () => {
-		state.view = { xmin: -10, xmax: 10, ymin: -10, ymax: 10 };
-		state.autoRange = false;
-		state.autoY = true;
-		renderYAuto();
-		syncRange();
-		scheduleDraw();
-		scheduleSave();
-	});
-	const yAutoBtn = $("#yAuto");
-	function renderYAuto() {
-		yAutoBtn.textContent = "Y축 자동: " + (state.autoY ? "켜짐" : "꺼짐");
-		yAutoBtn.setAttribute("aria-pressed", String(state.autoY));
-	}
-	yAutoBtn.addEventListener("click", () => {
-		if (state.autoY && geo) { state.view.ymin = geo.ymin; state.view.ymax = geo.ymax; }
-		state.autoY = !state.autoY;
-		renderYAuto();
+	// ---------- 자동 범위 ----------
+	// x 범위는 해와 극값(다항식은 정확한 값)을 기준으로, y 범위는 곡선 값을 기준으로 자동으로 맞춥니다.
+	// 드래그/확대를 하면 수동 모드가 되고, "자동 맞춤"으로 되돌립니다.
+	let fitKey = null;
+	$("#fitBtn").addEventListener("click", () => {
+		state.fit = true;
+		fitKey = null;
+		state.view.yc = 0;
 		scheduleDraw();
 		scheduleSave();
 	});
 
+	const analysisCache = new Map();
+	function analysisFor(item, baseEnv) {
+		const used = [...item.L.vars, ...item.R.vars].filter((name) => name !== "x" && name !== "y").sort();
+		const key = item.l + "=" + item.r + "|" + baseEnv.k + "|" + used.map((name) => name + ":" + baseEnv[name]).join(",");
+		let hit = analysisCache.get(key);
+		if (hit) return hit;
+		const env = Object.assign({}, baseEnv);
+		const left = item.L.poly(env), right = item.R.poly(env);
+		if (left && right) {
+			const coefficients = Calc.polySub(left, right);
+			hit = {
+				poly: true,
+				coefficients,
+				roots: Calc.polyRealRoots(coefficients),
+				critical: coefficients.length > 2 ? Calc.polyRealRoots(Calc.polyDeriv(coefficients)) : [],
+			};
+		} else {
+			const F = (x) => { env.x = x; return item.L.fn(env) - item.R.fn(env); };
+			hit = { poly: false, coefficients: null, roots: Calc.findRootsAuto(F), critical: [] };
+		}
+		if (analysisCache.size > 200) analysisCache.clear();
+		analysisCache.set(key, hit);
+		return hit;
+	}
+
+	function frameAround(points) {
+		const lo = Math.min(...points), hi = Math.max(...points);
+		const center = (lo + hi) / 2;
+		const half = Math.max(((hi - lo) / 2) * 1.4, 3);
+		return [center - half, center + half];
+	}
+	function fitWindow(analyses) {
+		let lo = Infinity, hi = -Infinity;
+		for (const a of analyses) {
+			let window = null;
+			if (a.poly) {
+				window = frameAround([...a.roots, ...a.critical, 0]);
+			} else {
+				for (const level of [10, 100, 1000]) {
+					const near = a.roots.filter((r) => Math.abs(r) <= level);
+					if (near.length) { window = level === 10 ? [-10, 10] : frameAround([...near, 0]); break; }
+				}
+			}
+			window = window || [-10, 10];
+			lo = Math.min(lo, window[0]);
+			hi = Math.max(hi, window[1]);
+		}
+		return Number.isFinite(lo) ? [lo, hi] : [-10, 10];
+	}
 	// ---------- 수식 분석 ----------
 	const parseCache = new Map();
 	function compile(source) {
@@ -485,7 +488,7 @@
 		ctx.clearRect(0, 0, W, H);
 
 		const css = getComputedStyle(document.documentElement);
-		const colors = { grid: css.getPropertyValue("--grid").trim(), axis: css.getPropertyValue("--axis").trim(), text: css.getPropertyValue("--muted").trim(), error: css.getPropertyValue("--error").trim(), line: css.getPropertyValue("--line").trim() };
+		const colors = { grid: css.getPropertyValue("--grid").trim(), axis: css.getPropertyValue("--axis").trim(), axisX: css.getPropertyValue("--axis-x").trim(), axisY: css.getPropertyValue("--axis-y").trim(), text: css.getPropertyValue("--muted").trim(), error: css.getPropertyValue("--error").trim(), line: css.getPropertyValue("--line").trim() };
 		const colorsByEq = palette();
 		paintSwatches();
 
@@ -512,10 +515,26 @@
 		}
 
 		const plotW = W - MARGIN.l - MARGIN.r, plotH = H - MARGIN.t - MARGIN.b;
-		const { xmin, xmax } = state.view;
 		const env = Object.assign({ x: 0, y: 0, k: angleFactor() }, state.params);
 		const explicit = valid.filter((it) => !it.implicit);
 		const anyImplicit = valid.some((it) => it.implicit);
+		const analyses = new Map(explicit.map((it) => [it, analysisFor(it, env)]));
+
+		// x 범위 자동 맞춤: 식이 바뀌면 새로 맞추고, 변수만 바뀌면 범위를 넓히기만 해서 화면이 흔들리지 않게 합니다.
+		if (state.fit) {
+			const candidate = fitWindow([...analyses.values()]);
+			const key = valid.map((it) => it.l + "=" + it.r).join("|");
+			if (key !== fitKey) {
+				fitKey = key;
+				state.view.xmin = candidate[0];
+				state.view.xmax = candidate[1];
+				state.view.yc = 0;
+			} else {
+				state.view.xmin = Math.min(state.view.xmin, candidate[0]);
+				state.view.xmax = Math.max(state.view.xmax, candidate[1]);
+			}
+		}
+		const { xmin, xmax } = state.view;
 
 		// 곡선 샘플링
 		const n = Math.max(300, Math.round(plotW * 1.5));
@@ -532,19 +551,16 @@
 
 		// y 범위
 		let ymin, ymax;
-		if (!state.autoY) {
-			ymin = state.view.ymin;
-			ymax = state.view.ymax;
-		} else if (anyImplicit) {
+		if (anyImplicit) {
 			const half = ((xmax - xmin) / 2) * (plotH / plotW);
-			ymin = -half;
-			ymax = half;
+			ymin = state.view.yc - half;
+			ymax = state.view.yc + half;
 		} else {
 			const range = robustYRange(explicit.flatMap((it) => [it.ly, it.ry]));
 			if (!range) { message("그래프를 그릴 수 없습니다.", colors.error); resultEl.textContent = "계산 가능한 구간이 없습니다."; return; }
 			[ymin, ymax] = range;
 		}
-		geo = { pl: MARGIN.l, pt: MARGIN.t, plotW, plotH, xmin, xmax, ymin, ymax };
+		geo = { pl: MARGIN.l, pt: MARGIN.t, plotW, plotH, xmin, xmax, ymin, ymax, anyImplicit };
 		const X = (x) => MARGIN.l + ((x - xmin) / (xmax - xmin)) * plotW;
 		const Y = (y) => MARGIN.t + ((ymax - y) / (ymax - ymin)) * plotH;
 
@@ -577,13 +593,29 @@
 		ctx.rect(MARGIN.l, MARGIN.t, plotW, plotH);
 		ctx.clip();
 
-		// 축
-		ctx.strokeStyle = colors.axis;
-		ctx.lineWidth = 1.5;
-		ctx.beginPath();
-		if (xmin <= 0 && xmax >= 0) { ctx.moveTo(X(0), MARGIN.t); ctx.lineTo(X(0), MARGIN.t + plotH); }
-		if (ymin <= 0 && ymax >= 0) { ctx.moveTo(MARGIN.l, Y(0)); ctx.lineTo(MARGIN.l + plotW, Y(0)); }
-		ctx.stroke();
+		// 축: x축(y=0)과 y축(x=0)을 서로 다른 색으로 그리고 끝에 이름을 붙입니다.
+		ctx.lineWidth = 2;
+		ctx.font = "bold 13px system-ui, sans-serif";
+		if (ymin <= 0 && ymax >= 0) {
+			ctx.strokeStyle = colors.axisX;
+			ctx.fillStyle = colors.axisX;
+			ctx.beginPath();
+			ctx.moveTo(MARGIN.l, Y(0));
+			ctx.lineTo(MARGIN.l + plotW, Y(0));
+			ctx.stroke();
+			ctx.textAlign = "right";
+			ctx.fillText("x", MARGIN.l + plotW - 6, Y(0) - 6);
+		}
+		if (xmin <= 0 && xmax >= 0) {
+			ctx.strokeStyle = colors.axisY;
+			ctx.fillStyle = colors.axisY;
+			ctx.beginPath();
+			ctx.moveTo(X(0), MARGIN.t);
+			ctx.lineTo(X(0), MARGIN.t + plotH);
+			ctx.stroke();
+			ctx.textAlign = "left";
+			ctx.fillText("y", X(0) + 6, MARGIN.t + 14);
+		}
 
 		// 곡선
 		ctx.lineWidth = 2.2;
@@ -619,13 +651,20 @@
 		} else if (first.implicit) {
 			resultEl.textContent = "y가 포함된 식은 그래프만 지원합니다.";
 		} else {
-			const F = (x) => { env.x = x; return first.L.fn(env) - first.R.fn(env); };
-			roots = state.autoRange ? Calc.findRootsAuto(F) : Calc.findRoots(F, xmin, xmax);
-			const shown = roots.slice(0, 12).map(fmt).join(", ");
-			resultEl.textContent = roots.length ? "해: " + shown + (roots.length > 12 ? " …" : "") : "해를 찾지 못했습니다.";
+			const analysis = analyses.get(first);
+			roots = analysis.roots;
+			if (analysis.poly && analysis.coefficients.length === 1) {
+				resultEl.textContent = analysis.coefficients[0] === 0 ? "모든 x에서 성립합니다." : "해가 없습니다.";
+			} else if (roots.length) {
+				const shown = roots.slice().sort((p, q) => Math.abs(p) - Math.abs(q)).slice(0, 12).sort((p, q) => p - q).map(fmt).join(", ");
+				resultEl.textContent = (analysis.poly ? "다항식의 모든 실수 해: " : "해: ") + shown + (roots.length > 12 ? " … (총 " + roots.length + "개)" : "");
+			} else {
+				resultEl.textContent = analysis.poly ? "실수 해가 없습니다." : "해를 찾지 못했습니다.";
+			}
 			ctx.font = "12px system-ui, sans-serif";
 			ctx.textAlign = "left";
-			for (const root of roots) {
+			const visibleRoots = roots.filter((root) => root >= xmin && root <= xmax);
+			for (const root of visibleRoots) {
 				env.x = root;
 				const value = first.L.fn(env);
 				if (!Number.isFinite(value)) continue;
@@ -637,7 +676,7 @@
 				ctx.strokeStyle = "#ffffff";
 				ctx.lineWidth = 1.5;
 				ctx.stroke();
-				if (roots.length <= 4) {
+				if (visibleRoots.length <= 4) {
 					ctx.fillStyle = colors.error;
 					ctx.fillText("x=" + fmt(root), px + 8, py - 8);
 				}
@@ -750,8 +789,7 @@
 		return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 	};
 	function viewChanged() {
-		state.autoRange = false;
-		syncRange();
+		state.fit = false;
 		scheduleDraw();
 		scheduleSave();
 	}
@@ -760,14 +798,10 @@
 		const xr = geo.xmax - geo.xmin;
 		state.view.xmin = geo.xmin - (dx * xr) / geo.plotW;
 		state.view.xmax = geo.xmax - (dx * xr) / geo.plotW;
-		if (!state.autoY) {
-			const yr = geo.ymax - geo.ymin;
-			state.view.ymin = geo.ymin + (dy * yr) / geo.plotH;
-			state.view.ymax = geo.ymax + (dy * yr) / geo.plotH;
-		}
 		geo.xmin = state.view.xmin;
 		geo.xmax = state.view.xmax;
-		if (!state.autoY) { geo.ymin = state.view.ymin; geo.ymax = state.view.ymax; }
+		// y 범위는 항상 자동입니다. 다만 y가 들어간 식(원 등)은 세로 위치도 옮길 수 있게 합니다.
+		if (geo.anyImplicit) state.view.yc += (dy * (geo.ymax - geo.ymin)) / geo.plotH;
 		viewChanged();
 	}
 	function zoomAt(px, py, factor) {
@@ -775,20 +809,18 @@
 		const cx = geo.xmin + ((px - geo.pl) / geo.plotW) * (geo.xmax - geo.xmin);
 		const nextXmin = cx - (cx - geo.xmin) * factor, nextXmax = cx + (geo.xmax - cx) * factor;
 		if (nextXmax - nextXmin < 1e-9 || nextXmax - nextXmin > 1e9) return;
+		if (geo.anyImplicit) {
+			const cy = geo.ymax - ((py - geo.pt) / geo.plotH) * (geo.ymax - geo.ymin);
+			const t = (py - geo.pt) / geo.plotH;
+			const half = ((nextXmax - nextXmin) / 2) * (geo.plotH / geo.plotW);
+			state.view.yc = cy + half * (2 * t - 1);
+		}
 		state.view.xmin = nextXmin;
 		state.view.xmax = nextXmax;
-		if (!state.autoY) {
-			const cy = geo.ymax - ((py - geo.pt) / geo.plotH) * (geo.ymax - geo.ymin);
-			state.view.ymin = cy - (cy - geo.ymin) * factor;
-			state.view.ymax = cy + (geo.ymax - cy) * factor;
-			geo.ymin = state.view.ymin;
-			geo.ymax = state.view.ymax;
-		}
-		geo.xmin = state.view.xmin;
-		geo.xmax = state.view.xmax;
+		geo.xmin = nextXmin;
+		geo.xmax = nextXmax;
 		viewChanged();
-	}
-	canvas.addEventListener("pointerdown", (event) => {
+	}	canvas.addEventListener("pointerdown", (event) => {
 		canvas.setPointerCapture(event.pointerId);
 		pointers.set(event.pointerId, local(event));
 		if (pointers.size === 1) gesture = { moved: 0, start: performance.now() };
@@ -837,8 +869,6 @@
 	renderAngle();
 	renderHistory();
 	renderEquationRows();
-	renderYAuto();
-	syncRange();
 	updatePreview();
 	scheduleDraw();
 	if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {

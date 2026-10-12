@@ -42,7 +42,8 @@
 }
 
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; overscroll-behavior-y: contain; }
+.key, .tabs button, .chip, .btn, .quick button { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 body {
 	margin: 0;
 	background: var(--bg);

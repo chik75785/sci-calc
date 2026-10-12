@@ -98,19 +98,35 @@
 		["0"], ["+", "+", "op"], ["C", "C", "clear"], ["⌫", "⌫", "clear"], ["=", "=", "eq"],
 	];
 	const keypad = $("#keypad");
+	const KEY_NAMES = { "⌫": "한 글자 지우기 (길게 누르면 전체 삭제)", C: "전체 지우기", "=": "계산", "/": "나누기", "*": "곱하기", "-": "빼기", "+": "더하기", "^": "거듭제곱", "pi": "파이", "e": "자연상수 e", "sqrt(": "제곱근", ".": "소수점", "(": "여는 괄호", ")": "닫는 괄호" };
 	for (const [value, label, kind] of KEYS) {
 		const button = document.createElement("button");
 		button.type = "button";
 		button.className = "key " + (kind || "");
 		button.textContent = label || value;
 		button.dataset.key = value;
+		button.setAttribute("aria-label", KEY_NAMES[value] || value.replace("(", ""));
 		keypad.append(button);
 	}
+	const buzz = () => { try { if (navigator.vibrate) navigator.vibrate(8); } catch (error) { /* 지원 안 함 */ } };
 	// 버튼을 눌러도 입력창의 커서 위치가 유지되도록 포커스 이동을 막습니다.
 	keypad.addEventListener("mousedown", (event) => event.preventDefault());
+	// ⌫ 길게 누르면 전체 삭제
+	let longPressTimer = 0;
+	let longPressed = false;
+	keypad.addEventListener("pointerdown", (event) => {
+		const button = event.target.closest("button[data-key]");
+		longPressed = false;
+		if (!button || button.dataset.key !== "⌫") return;
+		longPressTimer = setTimeout(() => { longPressed = true; buzz(); press("C"); }, 500);
+	});
+	for (const type of ["pointerup", "pointerleave", "pointercancel"]) keypad.addEventListener(type, () => clearTimeout(longPressTimer));
 	keypad.addEventListener("click", (event) => {
 		const button = event.target.closest("button[data-key]");
-		if (button) press(button.dataset.key);
+		if (!button) return;
+		if (longPressed) { longPressed = false; return; }
+		buzz();
+		press(button.dataset.key);
 	});
 
 	function insertAt(input, text) {

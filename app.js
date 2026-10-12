@@ -165,7 +165,7 @@
 		const expr = display.value.trim();
 		if (!expr) return;
 		try {
-			const text = fmt(Calc.evaluate(expr, { k: angleFactor() }));
+			const text = fmt(Calc.evaluate(expr, { angle: angleFactor() }));
 			state.history.unshift({ expr, result: text });
 			state.history.length = Math.min(state.history.length, 30);
 			display.value = text;
@@ -182,7 +182,7 @@
 		const expr = display.value.trim();
 		preview.textContent = "";
 		if (!expr || /^[-+]?[\d.]+$/.test(expr)) return;
-		try { preview.textContent = "= " + fmt(Calc.evaluate(expr, { k: angleFactor() })); } catch (error) { /* 입력 중 */ }
+		try { preview.textContent = "= " + fmt(Calc.evaluate(expr, { angle: angleFactor() })); } catch (error) { /* 입력 중 */ }
 	}
 	display.addEventListener("input", () => { justEvaluated = false; updatePreview(); });
 	display.addEventListener("keydown", (event) => {
@@ -306,7 +306,7 @@
 	const analysisCache = new Map();
 	function analysisFor(item, baseEnv) {
 		const used = [...item.L.vars, ...item.R.vars].filter((name) => name !== "x" && name !== "y").sort();
-		const key = item.l + "=" + item.r + "|" + baseEnv.k + "|" + used.map((name) => name + ":" + baseEnv[name]).join(",");
+		const key = item.l + "=" + item.r + "|" + baseEnv.angle + "|" + used.map((name) => name + ":" + baseEnv[name]).join(",");
 		let hit = analysisCache.get(key);
 		if (hit) return hit;
 		const env = Object.assign({}, baseEnv);
@@ -515,7 +515,7 @@
 		}
 
 		const plotW = W - MARGIN.l - MARGIN.r, plotH = H - MARGIN.t - MARGIN.b;
-		const env = Object.assign({ x: 0, y: 0, k: angleFactor() }, state.params);
+		const env = Object.assign({ x: 0, y: 0 }, state.params, { angle: angleFactor() });
 		const explicit = valid.filter((it) => !it.implicit);
 		const anyImplicit = valid.some((it) => it.implicit);
 		const analyses = new Map(explicit.map((it) => [it, analysisFor(it, env)]));

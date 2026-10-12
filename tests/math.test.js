@@ -147,6 +147,16 @@ test("AI 모델 선택: 선호 목록에 없으면 다른 Flash, 없으면 null"
 	eq(ai.pickModel([modelEntry("gemini-9-pro")]), null);
 	eq(ai.pickModel([]), null); eq(ai.pickModel(null), null); eq(ai.pickModel([null, 3, {}]), null);
 });
+test("AI 모델 순서: 선호 순서 → 다른 안정 Flash → 프리뷰", () => {
+	const models = [modelEntry("gemini-3-flash-preview"), modelEntry("gemini-9-flash"), modelEntry("gemini-3.6-flash"), modelEntry("gemini-3.8-flash"), modelEntry("gemini-9-pro")];
+	eq(ai.orderModels(models).join(","), "gemini-3.8-flash,gemini-3.6-flash,gemini-9-flash,gemini-3-flash-preview");
+});
+test("AI 서버 바쁨 판별과 오류 문구에 상태 코드·원인 포함", () => {
+	eq(ai.isOverloadStatus(503) && ai.isOverloadStatus(500) && ai.isOverloadStatus(504), true);
+	eq(ai.isOverloadStatus(429) || ai.isOverloadStatus(404) || ai.isOverloadStatus(400), false);
+	const message = ai.describeHttpError(503, { error: { message: "The model is overloaded. Please try again later." } });
+	eq(message.includes("503") && message.includes("overloaded"), true);
+});
 test("AI 기본 모델은 gemini-3.8-flash", () => { eq(ai.DEFAULT_MODEL, "gemini-3.8-flash"); });
 test("AI 프롬프트: 각도 단위와 최대 식 개수 반영", () => {
 	eq(ai.buildSystemPrompt("deg").includes("도(DEG)"), true);

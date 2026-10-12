@@ -77,6 +77,9 @@ const Ai = (() => {
 		};
 	}
 
+	// 잠시 뒤 다시 하면 풀릴 수 있는 서버 쪽 오류인지 (500, 502, 503, 504)
+	const isOverloadStatus = (status) => status === 500 || status === 502 || status === 503 || status === 504;
+
 	// Gemini HTTP 오류를 사용자가 이해할 수 있는 문장으로 바꿉니다.
 	function describeHttpError(status, data) {
 		const detail = data && data.error && typeof data.error.message === "string" ? data.error.message : "";
@@ -86,7 +89,7 @@ const Ai = (() => {
 		if (status === 401 || status === 403) return "이 키로는 사용할 수 없어요 (권한이나 지역 제한일 수 있어요). " + detail.slice(0, 120);
 		if (status === 404) return "모델을 찾을 수 없어요. 'AI 설정'의 모델 이름을 확인해 주세요.";
 		if (status === 429) return "무료 사용 한도를 넘었어요. 잠시 뒤에 다시 시도하거나 내일 이용해 주세요.";
-		if (status >= 500) return "Google 서버가 바쁜 것 같아요. 잠시 뒤에 다시 시도해 주세요.";
+		if (status >= 500) return "Google 서버가 바쁜 것 같아요 (" + status + "). 잠시 뒤에 다시 시도해 주세요." + (detail ? " [" + detail.slice(0, 100) + "]" : "");
 		return "AI 호출에 실패했어요 (" + status + "). " + detail.slice(0, 120);
 	}
 
@@ -102,13 +105,19 @@ const Ai = (() => {
 		}
 		return ids;
 	}
-	function pickModel(models) {
+	// 쓸 수 있는 Flash 모델을 선호 순서대로 나열합니다 (안정 버전 → 프리뷰 순).
+	function orderModels(models) {
 		const ids = listUsableModels(models);
-		for (const preferred of PREFERRED_MODELS) if (ids.includes(preferred)) return preferred;
-		return ids.find((id) => /flash/.test(id) && !/preview/.test(id)) || ids.find((id) => /flash/.test(id)) || null;
+		const ordered = PREFERRED_MODELS.filter((id) => ids.includes(id));
+		for (const id of ids) if (/flash/.test(id) && !/preview/.test(id) && !ordered.includes(id)) ordered.push(id);
+		for (const id of ids) if (/flash/.test(id) && !ordered.includes(id)) ordered.push(id);
+		return ordered;
+	}
+	function pickModel(models) {
+		return orderModels(models)[0] || null;
 	}
 
-	const api = { MAX_EQUATIONS, DEFAULT_MODEL, buildSystemPrompt, extractJson, sanitizePlan, describeHttpError, listUsableModels, pickModel };
+	const api = { MAX_EQUATIONS, DEFAULT_MODEL, buildSystemPrompt, extractJson, sanitizePlan, describeHttpError, listUsableModels, orderModels, pickModel, isOverloadStatus };
 	if (typeof module !== "undefined" && module.exports) module.exports = api;
 	return api;
 })();

@@ -23,7 +23,7 @@
 		const result = {
 			angle: "rad",
 			eqs: [{ l: "sin(x)", r: "0.5" }],
-			view: { xmin: -10, xmax: 10, yc: 0 },
+			view: { xmin: -10, xmax: 10, ymin: -10, ymax: 10 },
 			fit: true,
 			params: {},
 			history: [],
@@ -37,7 +37,8 @@
 				}
 				const v = saved.view;
 				if (v && Number.isFinite(v.xmin) && Number.isFinite(v.xmax) && v.xmin < v.xmax) {
-					result.view = { xmin: v.xmin, xmax: v.xmax, yc: Number.isFinite(v.yc) ? v.yc : 0 };
+					const hasY = Number.isFinite(v.ymin) && Number.isFinite(v.ymax) && v.ymin < v.ymax;
+					result.view = { xmin: v.xmin, xmax: v.xmax, ymin: hasY ? v.ymin : -10, ymax: hasY ? v.ymax : 10 };
 				}
 				result.fit = saved.fit !== false;
 				if (saved.params && typeof saved.params === "object") {
@@ -302,10 +303,10 @@
 	// x 범위는 해와 극값(다항식은 정확한 값)을 기준으로, y 범위는 곡선 값을 기준으로 자동으로 맞춥니다.
 	// 드래그/확대를 하면 수동 모드가 되고, "자동 맞춤"으로 되돌립니다.
 	let fitKey = null;
+	let eqKey = null;
 	$("#fitBtn").addEventListener("click", () => {
 		state.fit = true;
 		fitKey = null;
-		state.view.yc = 0;
 		scheduleDraw();
 		scheduleSave();
 	});
@@ -527,15 +528,18 @@
 		const anyImplicit = valid.some((it) => it.implicit);
 		const analyses = new Map(explicit.map((it) => [it, analysisFor(it, env)]));
 
+		// 식을 고치면 다시 자동 맞춤으로 돌아가서, 옮겨 둔 화면 때문에 그래프가 사라지는 일이 없게 합니다.
+		const key = valid.map((it) => it.l + "=" + it.r).join("|");
+		if (eqKey !== null && key !== eqKey) state.fit = true;
+		eqKey = key;
+
 		// x 범위 자동 맞춤: 식이 바뀌면 새로 맞추고, 변수만 바뀌면 범위를 넓히기만 해서 화면이 흔들리지 않게 합니다.
 		if (state.fit) {
 			const candidate = fitWindow([...analyses.values()]);
-			const key = valid.map((it) => it.l + "=" + it.r).join("|");
 			if (key !== fitKey) {
 				fitKey = key;
 				state.view.xmin = candidate[0];
 				state.view.xmax = candidate[1];
-				state.view.yc = 0;
 			} else {
 				state.view.xmin = Math.min(state.view.xmin, candidate[0]);
 				state.view.xmax = Math.max(state.view.xmax, candidate[1]);
@@ -557,11 +561,15 @@
 		}
 
 		// y 범위
+		// 자동 모드: 곡선에 맞춤(y가 있는 식은 x와 같은 비율). 수동 모드(드래그/확대 후): 사용자가 옮긴 범위를 그대로 사용.
 		let ymin, ymax;
-		if (anyImplicit) {
+		if (!state.fit) {
+			ymin = state.view.ymin;
+			ymax = state.view.ymax;
+		} else if (anyImplicit) {
 			const half = ((xmax - xmin) / 2) * (plotH / plotW);
-			ymin = state.view.yc - half;
-			ymax = state.view.yc + half;
+			ymin = -half;
+			ymax = half;
 		} else {
 			const range = robustYRange(explicit.flatMap((it) => [it.ly, it.ry]));
 			if (!range) { message("그래프를 그릴 수 없습니다.", colors.error); resultEl.textContent = "계산 가능한 구간이 없습니다."; return; }
@@ -795,39 +803,43 @@
 		const rect = canvas.getBoundingClientRect();
 		return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 	};
-	function viewChanged() {
+	// 처음 드래그/확대하는 순간 자동 맞춤을 끄고, 지금 보이는 범위를 수동 범위로 고정합니다.
+	function takeManualControl() {
+		if (!state.fit) return;
+		state.view.ymin = geo.ymin;
+		state.view.ymax = geo.ymax;
 		state.fit = false;
+	}
+	function viewChanged() {
 		scheduleDraw();
 		scheduleSave();
 	}
 	function panBy(dx, dy) {
 		if (!geo) return;
-		const xr = geo.xmax - geo.xmin;
+		takeManualControl();
+		const xr = geo.xmax - geo.xmin, yr = geo.ymax - geo.ymin;
 		state.view.xmin = geo.xmin - (dx * xr) / geo.plotW;
 		state.view.xmax = geo.xmax - (dx * xr) / geo.plotW;
-		geo.xmin = state.view.xmin;
-		geo.xmax = state.view.xmax;
-		// y 범위는 항상 자동입니다. 다만 y가 들어간 식(원 등)은 세로 위치도 옮길 수 있게 합니다.
-		if (geo.anyImplicit) state.view.yc += (dy * (geo.ymax - geo.ymin)) / geo.plotH;
+		state.view.ymin = geo.ymin + (dy * yr) / geo.plotH;
+		state.view.ymax = geo.ymax + (dy * yr) / geo.plotH;
+		Object.assign(geo, state.view);
 		viewChanged();
 	}
 	function zoomAt(px, py, factor) {
 		if (!geo) return;
 		const cx = geo.xmin + ((px - geo.pl) / geo.plotW) * (geo.xmax - geo.xmin);
-		const nextXmin = cx - (cx - geo.xmin) * factor, nextXmax = cx + (geo.xmax - cx) * factor;
-		if (nextXmax - nextXmin < 1e-9 || nextXmax - nextXmin > 1e9) return;
-		if (geo.anyImplicit) {
-			const cy = geo.ymax - ((py - geo.pt) / geo.plotH) * (geo.ymax - geo.ymin);
-			const t = (py - geo.pt) / geo.plotH;
-			const half = ((nextXmax - nextXmin) / 2) * (geo.plotH / geo.plotW);
-			state.view.yc = cy + half * (2 * t - 1);
-		}
-		state.view.xmin = nextXmin;
-		state.view.xmax = nextXmax;
-		geo.xmin = nextXmin;
-		geo.xmax = nextXmax;
+		const cy = geo.ymax - ((py - geo.pt) / geo.plotH) * (geo.ymax - geo.ymin);
+		const width = (geo.xmax - geo.xmin) * factor, height = (geo.ymax - geo.ymin) * factor;
+		if (width < 1e-9 || width > 1e9 || height < 1e-9 || height > 1e9) return;
+		takeManualControl();
+		state.view.xmin = cx - (cx - geo.xmin) * factor;
+		state.view.xmax = cx + (geo.xmax - cx) * factor;
+		state.view.ymin = cy - (cy - geo.ymin) * factor;
+		state.view.ymax = cy + (geo.ymax - cy) * factor;
+		Object.assign(geo, state.view);
 		viewChanged();
-	}	canvas.addEventListener("pointerdown", (event) => {
+	}
+	canvas.addEventListener("pointerdown", (event) => {
 		canvas.setPointerCapture(event.pointerId);
 		pointers.set(event.pointerId, local(event));
 		if (pointers.size === 1) gesture = { moved: 0, start: performance.now() };

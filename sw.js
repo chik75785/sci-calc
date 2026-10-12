@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE = "scicalc-v1";
+const CACHE = "scicalc-v2";
 const ASSETS = ["./", "index.html", "style.css", "math.js", "app.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {

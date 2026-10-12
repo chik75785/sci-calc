@@ -884,7 +884,198 @@
 	new ResizeObserver(scheduleDraw).observe(canvas);
 	darkQuery.addEventListener("change", scheduleDraw);
 
+	// ---------- AI로 문제 풀기 (Gemini) ----------
+	// API 키는 이 기기의 localStorage 에만 저장하고, 코드나 저장소에는 넣지 않습니다.
+	const AI_STORE = "scicalc.ai";
+	const ai = {
+		problem: $("#aiProblem"), solve: $("#aiSolve"), graph: $("#aiShowGraph"), status: $("#aiStatus"), result: $("#aiResult"),
+		key: $("#aiKey"), model: $("#aiModel"), keyState: $("#aiKeyState"), settings: $("#aiSettings"),
+	};
+	function loadAiConfig() {
+		try {
+			const saved = JSON.parse(localStorage.getItem(AI_STORE)) || {};
+			return {
+				key: typeof saved.key === "string" ? saved.key : "",
+				model: typeof saved.model === "string" && saved.model.trim() ? saved.model.trim() : Ai.DEFAULT_MODEL,
+			};
+		} catch (error) {
+			return { key: "", model: Ai.DEFAULT_MODEL };
+		}
+	}
+	function saveAiConfig(config) {
+		try { localStorage.setItem(AI_STORE, JSON.stringify(config)); return true; } catch (error) { return false; }
+	}
+	function renderAiSettings() {
+		const config = loadAiConfig();
+		ai.model.value = config.model;
+		ai.keyState.textContent = config.key ? "저장된 키: ••••" + config.key.slice(-4) : "저장된 키가 없어요.";
+		ai.settings.open = !config.key;
+	}
+	ai.saveKeyBtn = $("#aiSaveKey");
+	ai.saveKeyBtn.addEventListener("click", () => {
+		const current = loadAiConfig();
+		const key = ai.key.value.trim();
+		if (/\s/.test(key)) { ai.keyState.textContent = "키에 공백이 들어 있어요. 다시 붙여넣어 주세요."; return; }
+		const next = { key: key || current.key, model: ai.model.value.trim() || Ai.DEFAULT_MODEL };
+		if (!saveAiConfig(next)) { ai.keyState.textContent = "이 브라우저에서는 저장할 수 없어요 (사생활 보호 모드 등)."; return; }
+		ai.key.value = "";
+		renderAiSettings();
+	});
+	$("#aiClearKey").addEventListener("click", () => {
+		saveAiConfig({ key: "", model: loadAiConfig().model });
+		ai.key.value = "";
+		renderAiSettings();
+	});
+
+	async function askGemini(problem, config) {
+		const url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(config.model) + ":generateContent";
+		const body = {
+			systemInstruction: { parts: [{ text: Ai.buildSystemPrompt(state.angle) }] },
+			contents: [{ role: "user", parts: [{ text: "문제:\n" + problem }] }],
+			generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+		};
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), 90000);
+		try {
+			let response;
+			try {
+				response = await fetch(url, {
+					method: "POST",
+					headers: { "Content-Type": "application/json", "x-goog-api-key": config.key },
+					body: JSON.stringify(body),
+					signal: controller.signal,
+				});
+			} catch (error) {
+				if (error.name === "AbortError") throw new Error("시간이 너무 오래 걸려서 중단했어요. 다시 시도해 주세요.");
+				throw new Error("AI 서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.");
+			}
+			const text = await response.text();
+			let data = null;
+			try { data = JSON.parse(text); } catch (error) { /* JSON 아님 */ }
+			if (!response.ok) throw new Error(Ai.describeHttpError(response.status, data));
+			const candidate = data && data.candidates && data.candidates[0];
+			const output = ((candidate && candidate.content && candidate.content.parts) || []).map((part) => part.text || "").join("").trim();
+			if (!output) {
+				const reason = (data && data.promptFeedback && data.promptFeedback.blockReason) || (candidate && candidate.finishReason) || "";
+				throw new Error("AI가 답을 주지 않았어요" + (reason ? " (" + reason + ")" : "") + ". 문제를 다르게 표현해 보세요.");
+			}
+			return Ai.sanitizePlan(Ai.extractJson(output), Calc.parse);
+		} finally {
+			clearTimeout(timer);
+		}
+	}
+
+	// AI가 만든 식을 그래프 탭에 적용합니다. 모르는 한 글자 변수는 슬라이더 1로 시작합니다.
+	function applyPlan(plan) {
+		if (!plan.equations.length) return false;
+		state.eqs = plan.equations.map((eq) => ({ l: eq.left, r: eq.right }));
+		state.params = {};
+		for (const eq of plan.equations) {
+			for (const side of [eq.left, eq.right]) {
+				const parsed = compile(side);
+				if (parsed.vars) for (const name of parsed.vars) if (name !== "x" && name !== "y") state.params[name] = 1;
+			}
+		}
+		paramKey = "\u0000";
+		state.fit = true;
+		fitKey = null;
+		probeX = null;
+		renderEquationRows();
+		scheduleDraw();
+		scheduleSave();
+		return true;
+	}
+
+	// 앱의 엔진이 직접 계산한 해 (AI가 계산을 틀려도 이 값은 정확합니다).
+	function verifyText() {
+		const first = analyze().items[0];
+		if (!first || first.error || first.implicit) return "";
+		const env = Object.assign({ x: 0, y: 0 }, state.params, { angle: angleFactor() });
+		const a = analysisFor(first, env);
+		if (a.poly && a.coefficients.length === 1) return a.coefficients[0] === 0 ? "모든 x에서 성립해요." : "실수 해가 없어요.";
+		if (!a.roots.length) return "실수 해를 찾지 못했어요.";
+		const shown = a.roots.slice().sort((p, q) => Math.abs(p) - Math.abs(q)).slice(0, 8).sort((p, q) => p - q).map(describeRoot).join(", ");
+		return (a.poly ? "다항식의 모든 실수 해: " : "해: ") + shown + (a.roots.length > 8 ? " … (총 " + a.roots.length + "개)" : "");
+	}
+
+	function renderAiResult(plan, drawn) {
+		const box = ai.result;
+		box.innerHTML = "";
+		const add = (tag, text, className) => {
+			const el = document.createElement(tag);
+			if (className) el.className = className;
+			el.textContent = text;
+			box.append(el);
+			return el;
+		};
+		if (plan.title) add("h3", plan.title);
+		if (plan.answer) add("div", "답: " + plan.answer, "answer");
+		if (plan.steps.length) {
+			add("p", "풀이", "note");
+			const list = document.createElement("ol");
+			for (const step of plan.steps) {
+				const li = document.createElement("li");
+				li.textContent = step;
+				list.append(li);
+			}
+			box.append(list);
+		}
+		if (drawn) {
+			add("p", "그래프에 그린 식", "note");
+			const list = document.createElement("ul");
+			for (const eq of plan.equations) {
+				const li = document.createElement("li");
+				const code = document.createElement("code");
+				code.textContent = eq.left + " = " + eq.right;
+				li.append(code, document.createTextNode(eq.label ? "  " + eq.label : ""));
+				list.append(li);
+			}
+			box.append(list);
+			const verify = verifyText();
+			if (verify) add("p", "앱이 직접 계산한 결과 (첫 번째 식 기준): " + verify, "verify");
+		} else {
+			add("p", "이 문제는 그래프로 그릴 수 있는 식이 없어서 풀이만 보여드려요.", "note");
+		}
+		if (plan.notes) add("p", "참고: " + plan.notes, "note");
+		if (plan.dropped.length) add("p", "앱이 해석하지 못해 제외한 식: " + plan.dropped.map((d) => d.left + " = " + d.right).join(", "), "note");
+		box.hidden = false;
+		ai.graph.hidden = !drawn;
+	}
+
+	let aiBusy = false;
+	async function solveWithAi() {
+		if (aiBusy) return;
+		const problem = ai.problem.value.trim();
+		const config = loadAiConfig();
+		ai.status.className = "msg";
+		ai.status.textContent = "";
+		if (!problem) { ai.status.textContent = "문제를 입력해 주세요."; return; }
+		if (!config.key) { ai.status.textContent = "먼저 아래 'AI 설정'에서 API 키를 저장해 주세요."; ai.settings.open = true; return; }
+		aiBusy = true;
+		ai.solve.disabled = true;
+		ai.graph.hidden = true;
+		ai.result.hidden = true;
+		ai.status.className = "hint";
+		ai.status.textContent = "AI가 푸는 중이에요… (보통 5~20초)";
+		try {
+			const plan = await askGemini(problem, config);
+			const drawn = applyPlan(plan);
+			renderAiResult(plan, drawn);
+			ai.status.textContent = "";
+		} catch (error) {
+			ai.status.className = "msg";
+			ai.status.textContent = error.message || "알 수 없는 오류가 났어요.";
+		} finally {
+			aiBusy = false;
+			ai.solve.disabled = false;
+		}
+	}
+	ai.solve.addEventListener("click", solveWithAi);
+	ai.problem.addEventListener("keydown", (event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) solveWithAi(); });
+	ai.graph.addEventListener("click", () => setTab("graph"));
+
 	// ---------- 시작 ----------
+	renderAiSettings();
 	renderAngle();
 	renderHistory();
 	renderEquationRows();
